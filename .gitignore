@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.env
+db.sqlite3
+media
+static
+.vscode/
+.idea/
+*.md
+!README.md
+node_modules/
+dist/
+.DS_Store
