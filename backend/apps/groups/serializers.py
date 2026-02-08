@@ -33,3 +33,8 @@ class GroupSerializer(serializers.ModelSerializer):
         # Create membership for the creator
         Membership.objects.create(user=user, group=group)
         return group
+
+class GroupInviteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GroupInvite
+        fields = ['email']
