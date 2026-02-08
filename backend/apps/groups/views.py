@@ -3,6 +3,7 @@ from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from .models import Group, Membership, GroupInvite
 from .serializers import GroupSerializer, MembershipSerializer, GroupInviteSerializer
 
@@ -44,3 +45,20 @@ class InviteMemberView(APIView):
             )
             return Response({'token': token}, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class AcceptInviteView(APIView):
+    def post(self, request, token):
+        try:
+            invite = GroupInvite.objects.get(token=token, accepted_at__isnull=True)
+        except GroupInvite.DoesNotExist:
+            return Response({'error': 'Invalid or expired token'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check if already a member to prevent IntegrityError
+        if Membership.objects.filter(group=invite.group, user=request.user).exists():
+            return Response({'error': 'Already a member'}, status=status.HTTP_400_BAD_REQUEST)
+
+        Membership.objects.create(group=invite.group, user=request.user)
+        invite.accepted_at = timezone.now()
+        invite.save()
+
+        return Response({'message': 'Successfully joined the group'}, status=status.HTTP_200_OK)
