@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import GroupDetail from './pages/GroupDetail';
+import AddBill from './pages/AddBill';
 import AcceptInvite from './pages/AcceptInvite';
 
 const router = createBrowserRouter([
@@ -18,6 +19,7 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <Dashboard /> },
           { path: 'groups/:id', element: <GroupDetail /> },
+          { path: 'groups/:id/add-bill', element: <AddBill /> },
           { path: 'accept-invite/:token', element: <AcceptInvite /> },
         ]
       },
