@@ -5,11 +5,13 @@ import {
     useGetGroupMembersQuery,
     useInviteMemberMutation
 } from '../store/groupsApi';
+import { useGetBillsQuery } from '../store/billsApi';
 
 const GroupDetail = () => {
     const { id } = useParams();
     const { data: group, isLoading: isGroupLoading } = useGetGroupDetailQuery(id);
     const { data: members, isLoading: isMembersLoading } = useGetGroupMembersQuery(id);
+    const { data: bills, isLoading: isBillsLoading } = useGetBillsQuery(id);
     const [inviteMember, { isLoading: isInviting }] = useInviteMemberMutation();
 
     const [email, setEmail] = useState('');
@@ -27,7 +29,7 @@ const GroupDetail = () => {
         }
     };
 
-    if (isGroupLoading || isMembersLoading) return <div className="p-8 max-w-4xl mx-auto text-gray-500">Loading group details...</div>;
+    if (isGroupLoading || isMembersLoading || isBillsLoading) return <div className="p-8 max-w-4xl mx-auto text-gray-500">Loading group details...</div>;
     if (!group) return <div className="p-8 max-w-4xl mx-auto text-red-500">Group not found.</div>;
 
     const inviteLink = inviteToken ? `${window.location.origin}/accept-invite/${inviteToken}` : '';
@@ -47,10 +49,31 @@ const GroupDetail = () => {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <div className="lg:col-span-2 space-y-8">
-                    {/* Bills and Balances will go here in Phase 8/9 */}
                     <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100">
-                        <h3 className="text-xl font-bold mb-4 text-gray-800">Group Bills</h3>
-                        <p className="text-gray-500 italic">Bills and line items will be displayed here in Phase 8.</p>
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-bold text-gray-800">Group Bills</h3>
+                            <Link to={`/groups/${id}/add-bill`} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold shadow hover:bg-blue-700 transition">
+                                + Add Bill
+                            </Link>
+                        </div>
+
+                        {bills?.length === 0 ? (
+                            <p className="text-gray-500 italic text-center py-6">No bills added to this group yet.</p>
+                        ) : (
+                            <div className="space-y-4">
+                                {bills?.map(bill => (
+                                    <div key={bill.id} className="flex justify-between items-center p-4 border border-gray-100 rounded-lg hover:shadow-md transition bg-gray-50">
+                                        <div>
+                                            <h4 className="font-semibold text-gray-800">{bill.title}</h4>
+                                            <p className="text-xs text-gray-500">Added by {bill.created_by?.name || bill.created_by?.email} on {new Date(bill.created_at).toLocaleDateString()}</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="font-bold text-lg text-gray-800">{Number(bill.total_amount).toFixed(2)} {bill.currency}</p>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                     <div className="bg-white p-8 rounded-xl shadow-sm border border-gray-100">
