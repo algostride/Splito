@@ -4,7 +4,8 @@ from rest_framework.response import Response
 from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from .serializers import RegisterSerializer
+from rest_framework_simplejwt.tokens import RefreshToken
+from .serializers import RegisterSerializer, MyTokenObtainPairSerializer
 
 
 class RegisterView(APIView):
@@ -14,8 +15,15 @@ class RegisterView(APIView):
         serializer = RegisterSerializer(data=request.data)
         if serializer.is_valid():
             user = serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
+            refresh = RefreshToken.for_user(user)
+            return Response({
+                "user": serializer.data,
+                "token": str(refresh.access_token),
+                "refresh": str(refresh),
+            }, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-LoginView = TokenObtainPairView
+class LoginView(TokenObtainPairView):
+    serializer_class = MyTokenObtainPairSerializer
+
 TokenRefreshApiView = TokenRefreshView

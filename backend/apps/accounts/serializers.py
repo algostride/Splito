@@ -19,6 +19,15 @@ class RegisterSerializer(serializers.ModelSerializer):
         )
 
 
+from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
+
+class MyTokenObtainPairSerializer(TokenObtainPairSerializer):
+    def validate(self, attrs):
+        data = super().validate(attrs)
+        data['user'] = UserSerializer(self.user).data
+        data['token'] = data.pop('access') # For frontend convenience
+        return data
+
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User

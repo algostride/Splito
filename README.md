@@ -12,6 +12,7 @@ Splito is a modern, responsive web application for creating groups, logging shar
 3. **Advanced Invites**: Interoperable one-click ticket URLs to invite members securely.
 4. **Intelligent Bills**: Add bills manually assigning portions or evenly splitting them with group members.
 5. **Real-time Settlement Engine**: Automatically computes net balances in backend to simplify debts cleanly inside the active group context.
+6. **OCR Bill Addition**: Add bills using OCR to extract information from the bill. In progress.
 
 ## Local Setup
 
