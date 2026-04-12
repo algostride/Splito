@@ -13,12 +13,15 @@ class Group(models.Model):
 
 class Membership(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='group_memberships')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='group_memberships', db_index=True)
     group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name='memberships')
     joined_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         unique_together = ('user', 'group')
+
+    def __str__(self):
+        return f"{self.user} in {self.group}"
 
 class GroupInvite(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -27,4 +30,7 @@ class GroupInvite(models.Model):
     email = models.EmailField()
     token = models.CharField(max_length=64, unique=True)
     accepted_at = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"{self.email} to {self.group}"
 
