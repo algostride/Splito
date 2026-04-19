@@ -14,10 +14,20 @@ def compute_balances(group_id):
             'net': Decimal('0.00')
         }
 
+    bill_total_shares = {}
+    item_aggregates = Item.objects.filter(
+        bill__group_id=group_id
+    ).values('bill_id').annotate(
+        total=models.Sum('assignments__share_amount')
+    )
+    for agg in item_aggregates:
+        bill_total_shares[agg['bill_id']] = agg['total'] or Decimal('0.00')
+
     bills = Bill.objects.filter(group_id=group_id)
     for bill in bills:
-        if bill.created_by_id in balances:
-            balances[bill.created_by_id]['net'] += bill.total_amount
+        payer_id = bill.paid_by_id or bill.created_by_id
+        if payer_id in balances:
+            balances[payer_id]['net'] += bill_total_shares.get(bill.id, Decimal('0.00'))
 
     assignments = ItemAssignment.objects.filter(item__bill__group_id=group_id)
     for assignment in assignments:
@@ -32,7 +42,8 @@ def compute_balances(group_id):
             balances[settlement.payee_id]['net'] -= settlement.amount
 
     for user_id, bal in balances.items():
-         bal['net'] = f"{bal['net']:.2f}"
+         bal['net_balance'] = f"{bal['net']:.2f}"
+         bal['user_name'] = bal.pop('name')
 
     return list(balances.values())
 
