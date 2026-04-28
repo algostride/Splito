@@ -8,6 +8,7 @@ class Bill(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     group = models.ForeignKey('groups.Group', on_delete=models.CASCADE, related_name='bills', db_index=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='created_bills')
+    paid_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='paid_bills', null=True, blank=True)
     title = models.CharField(max_length=255)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(Decimal('0.01'))])
     currency = models.CharField(max_length=10)
