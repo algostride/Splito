@@ -1,6 +1,7 @@
 from rest_framework import generics
-from .models import Bill
+from .models import Bill, Item, ItemAssignment
 from .serializers import BillSerializer
+
 
 class BillListCreateView(generics.ListCreateAPIView):
     serializer_class = BillSerializer
@@ -12,7 +13,8 @@ class BillListCreateView(generics.ListCreateAPIView):
             queryset = queryset.filter(group_id=group_id)
         return queryset
 
-class BillDetailView(generics.RetrieveAPIView):
+
+class BillDetailView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = BillSerializer
 
     def get_queryset(self):
