@@ -53,7 +53,9 @@ class AcceptInviteView(APIView):
         except GroupInvite.DoesNotExist:
             return Response({'error': 'Invalid or expired token'}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Check if already a member to prevent IntegrityError
+        if request.user.email != invite.email:
+            return Response({'error': 'This invite is not for your email'}, status=status.HTTP_403_FORBIDDEN)
+
         if Membership.objects.filter(group=invite.group, user=request.user).exists():
             return Response({'error': 'Already a member'}, status=status.HTTP_400_BAD_REQUEST)
 

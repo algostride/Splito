@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useGetGroupsQuery, useCreateGroupMutation } from '../store/groupsApi';
 import { Plus, Users, LayoutDashboard } from 'lucide-react';
@@ -8,6 +8,18 @@ const Dashboard = () => {
     const [createGroup, { isLoading: isCreating }] = useCreateGroupMutation();
     const [newGroupName, setNewGroupName] = useState('');
     const [showModal, setShowModal] = useState(false);
+    const modalRef = useRef(null);
+
+    useEffect(() => {
+        if (!showModal) return;
+        const handleClickOutside = (e) => {
+            if (modalRef.current && !modalRef.current.contains(e.target)) {
+                setShowModal(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [showModal]);
 
     const handleCreateGroup = async (e) => {
         e.preventDefault();
@@ -80,8 +92,8 @@ const Dashboard = () => {
             )}
 
             {showModal && (
-                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-                    <div className="bg-white rounded-xl shadow-xl p-6 w-full max-w-md">
+                <div className="fixed inset-0 flex items-center justify-center p-4 z-50">
+                    <div ref={modalRef} className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md border border-gray-100 animate-fade-in-up">
                         <h3 className="text-2xl font-bold mb-4">Create New Group</h3>
                         <form onSubmit={handleCreateGroup}>
                             <input

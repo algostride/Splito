@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useDispatch } from 'react-redux';
 import { useNavigate, Link } from 'react-router-dom';
 import { useLoginMutation } from '../store/authApi';
@@ -8,19 +8,21 @@ import { LogIn, Mail, Lock, Sparkles } from 'lucide-react';
 const Login = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [error, setError] = useState('');
     const [login, { isLoading }] = useLoginMutation();
     const dispatch = useDispatch();
     const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        setError('');
         try {
             const userData = await login({ email, password }).unwrap();
             dispatch(setCredentials(userData));
             navigate('/');
         } catch (err) {
             console.error('Failed to login', err);
-            alert('Login failed. Please check your credentials.');
+            setError(err?.data?.detail || 'Login failed. Please check your credentials.');
         }
     };
 
@@ -36,6 +38,11 @@ const Login = () => {
 
             <div className="mt-10 sm:mx-auto sm:w-full sm:max-w-md">
                 <div className="bg-white py-10 px-10 shadow-2xl shadow-blue-900/5 rounded-3xl border border-gray-100">
+                    {error && (
+                        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm font-bold">
+                            {error}
+                        </div>
+                    )}
                     <form className="space-y-6" onSubmit={handleSubmit}>
                         <div className="space-y-1">
                             <label className="block text-xs font-black text-gray-400 uppercase tracking-widest ml-1">Email address</label>

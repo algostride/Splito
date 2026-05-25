@@ -91,6 +91,14 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.IsAuthenticated',
     ),
+    'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': '50/hour',
+        'user': '200/hour',
+    },
 }
 
 # SimpleJWT
@@ -106,5 +114,7 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",  # Vite default
     "http://127.0.0.1:5173",
 ]
+
+CORS_ALLOW_CREDENTIALS = True
 
 AUTH_USER_MODEL = 'accounts.User'

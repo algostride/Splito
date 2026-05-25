@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import { useRegisterMutation } from '../store/authApi';
@@ -9,19 +9,21 @@ const Register = () => {
     const [email, setEmail] = useState('');
     const [name, setName] = useState('');
     const [password, setPassword] = useState('');
+    const [error, setError] = useState('');
     const [register, { isLoading }] = useRegisterMutation();
     const dispatch = useDispatch();
     const navigate = useNavigate();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
+        setError('');
         try {
             const userData = await register({ email, name, password }).unwrap();
             dispatch(setCredentials(userData));
             navigate('/');
         } catch (err) {
             console.error('Failed to register', err);
-            alert('Registration failed. Please check your data.');
+            setError(err?.data?.detail || 'Registration failed. Please check your data.');
         }
     };
 
@@ -37,6 +39,11 @@ const Register = () => {
 
             <div className="mt-10 sm:mx-auto sm:w-full sm:max-w-md">
                 <div className="bg-white py-10 px-10 shadow-2xl shadow-blue-900/5 rounded-3xl border border-gray-100">
+                    {error && (
+                        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm font-bold">
+                            {error}
+                        </div>
+                    )}
                     <form className="space-y-6" onSubmit={handleSubmit}>
                         <div className="space-y-1">
                             <label className="block text-xs font-black text-gray-400 uppercase tracking-widest ml-1">Full Name</label>

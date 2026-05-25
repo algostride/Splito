@@ -28,6 +28,7 @@ export const groupsApi = api.injectEndpoints({
                 method: 'POST',
                 body: { email },
             }),
+            invalidatesTags: ['Member'],
         }),
         acceptInvite: builder.mutation({
             query: (token) => ({
