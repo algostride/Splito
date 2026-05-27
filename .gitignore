@@ -7,9 +7,21 @@ media
 static
 .vscode/
 .idea/
-*.md
-!README.md
 node_modules/
 dist/
+.pytest_cache/
 .DS_Store
 */myenv/*
+
+# One-off UI mockups and exported diagrams, not application source.
+*.html
+
+# Playwright artefacts. Traces and reports are per-run debug output.
+frontend/playwright-report/
+frontend/test-results/
+frontend/.playwright/
+
+# Dumps written by `manage.py seed_demo` before it wipes the database.
+# Real data, so it must not be committed; the restore command that the
+# seeder prints refers to these local paths.
+backend/seed-backups/
