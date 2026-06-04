@@ -1,5 +1,5 @@
 from rest_framework import generics
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from uuid import UUID
 from .models import Bill, Item, ItemAssignment
 from .serializers import BillSerializer
@@ -48,3 +48,11 @@ class BillDetailView(generics.RetrieveUpdateDestroyAPIView):
         ).select_related('created_by', 'paid_by', 'group').prefetch_related(
             'items__assignments__user'
         ).distinct()
+
+    def _is_owner(self, bill):
+        return bill.created_by_id == self.request.user.id or bill.group.created_by_id == self.request.user.id
+
+    def perform_destroy(self, instance):
+        if not self._is_owner(instance):
+            raise PermissionDenied("Only the bill's creator or the group owner can delete it.")
+        instance.delete()
