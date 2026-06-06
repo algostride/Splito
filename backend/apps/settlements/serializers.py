@@ -22,6 +22,12 @@ class SettlementSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Amount must be positive.")
 
         if group:
+            request = self.context.get('request')
+            user = getattr(request, 'user', None)
+            if user is not None and not user.is_authenticated:
+                raise serializers.ValidationError("You must be logged in.")
+            if not Membership.objects.filter(group=group, user=user).exists():
+                raise serializers.ValidationError("You are not a member of this group.")
             if not Membership.objects.filter(group=group, user=payer).exists():
                 raise serializers.ValidationError("Payer is not a member of this group.")
             if not Membership.objects.filter(group=group, user=payee).exists():
