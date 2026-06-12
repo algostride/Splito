@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from django.db import transaction
 from django.contrib.auth import get_user_model
 from .models import Bill, Item, ItemAssignment
@@ -18,14 +18,21 @@ class ItemAssignmentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ItemAssignment
-        fields = ['id', 'user_id', 'user', 'share_amount']
+        fields = ['id', 'user_id', 'user', 'share_amount', 'split_value']
+        read_only_fields = ['id']
+        extra_kwargs = {
+            'share_amount': {'required': False},
+            'split_value': {'required': False, 'allow_null': True},
+        }
 
 class ItemSerializer(serializers.ModelSerializer):
     assignments = ItemAssignmentSerializer(many=True)
 
     class Meta:
         model = Item
-        fields = ['id', 'name', 'amount', 'assignments']
+        fields = ['id', 'name', 'amount', 'split_mode', 'assignments']
+        read_only_fields = ['id']
+        extra_kwargs = {'split_mode': {'required': False}}
 
 class BillSerializer(serializers.ModelSerializer):
     items = ItemSerializer(many=True)
@@ -35,8 +42,80 @@ class BillSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Bill
-        fields = ['id', 'group', 'title', 'total_amount', 'currency', 'created_by', 'paid_by', 'paid_by_detail', 'created_at', 'items']
+        fields = ['id', 'group', 'title', 'total_amount', 'currency', 'bill_type', 'created_by', 'paid_by', 'paid_by_detail', 'created_at', 'items']
         read_only_fields = ['id', 'created_by', 'created_at']
+        extra_kwargs = {'bill_type': {'required': False}}
+
+    def _allocate(self, amount, weights, basis=None):
+        """Split `amount` across `weights` in whole paise, exactly.
+
+        Flooring each share independently and rounding the total would let a
+        3-way split of 10.00 become 3.33 x 3 = 9.99, which the sum check then
+        rejects. Flooring and handing the leftover paise to the largest
+        fractional remainders keeps the allocation exact by construction.
+
+        `basis` is the denominator: the sum of the weights in shares mode
+        (3/2/1 is relative), or 100 in percent mode (60/30 means 60% and 30% of
+        the item, and stays short rather than being rescaled to 66.7/33.3).
+
+        Only a real rounding residual is handed out. A larger shortfall means
+        the weights do not cover the item and is left in place, so the caller's
+        sum check reports the split as invalid.
+        """
+        total = basis if basis is not None else sum(weights)
+        if total <= 0:
+            return None
+
+        amount_paise = int((amount * 100).to_integral_value(rounding=ROUND_HALF_UP))
+        exact = [(w * amount_paise) / total for w in weights]
+        base = [int(v // 1) for v in exact]
+        leftover = amount_paise - sum(base)
+
+        if 0 < leftover < len(weights):
+            order = sorted(range(len(weights)), key=lambda i: exact[i] - base[i], reverse=True)
+            for k in range(leftover):
+                base[order[k]] += 1
+
+        return [Decimal(p) / Decimal(100) for p in base]
+
+    def _resolve_shares(self, item_data):
+        """Turn per-member split_value into money, falling back to share_amount.
+
+        Returns a list of assignment dicts carrying a resolved share_amount.
+        Clients that only know the monetary split (older clients, the test
+        suite) keep working untouched.
+        """
+        split_mode = item_data.get('split_mode') or Item.SPLIT_MODE_SHARES
+        assignments = item_data.get('assignments', [])
+        raw = [a.get('split_value') for a in assignments]
+
+        shares = None
+        if assignments and not any(v is None for v in raw):
+            if any(Decimal(str(v)) < 0 for v in raw):
+                raise serializers.ValidationError(
+                    f"Item '{item_data.get('name', '')}' has a negative split value."
+                )
+            amount = Decimal(str(item_data['amount']))
+            weights = [Decimal(str(v)) for v in raw]
+            if split_mode == Item.SPLIT_MODE_PERCENT:
+                shares = self._allocate(amount, weights, basis=Decimal('100'))
+            else:
+                shares = self._allocate(amount, weights)
+
+        if shares is None:
+            for assignment in assignments:
+                if assignment.get('share_amount') is None:
+                    raise serializers.ValidationError(
+                        f"Item '{item_data.get('name', '')}' needs a share_amount or a split_value per member."
+                    )
+            return assignments
+
+        resolved = []
+        for assignment, share in zip(assignments, shares):
+            entry = dict(assignment)
+            entry['share_amount'] = share.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            resolved.append(entry)
+        return resolved
 
     def validate(self, data):
         items_data = data.get('items', self.initial_data.get('items', []))
@@ -48,7 +127,7 @@ class BillSerializer(serializers.ModelSerializer):
 
             for item_data in items_data:
                 item_amount = Decimal(str(item_data['amount']))
-                assignments = item_data.get('assignments', [])
+                assignments = self._resolve_shares(item_data)
                 shares_total = sum(Decimal(str(a['share_amount'])) for a in assignments)
 
                 if shares_total != item_amount:
@@ -91,7 +170,7 @@ class BillSerializer(serializers.ModelSerializer):
         bill = Bill.objects.create(created_by=user, paid_by=paid_by, **validated_data)
 
         for item_data in items_data:
-            assignments_data = item_data.pop('assignments')
+            assignments_data = self._resolve_shares(item_data)
             item = Item.objects.create(bill=bill, **item_data)
 
             for assignment_data in assignments_data:
@@ -114,7 +193,7 @@ class BillSerializer(serializers.ModelSerializer):
         if items_data is not None:
             instance.items.all().delete()
             for item_data in items_data:
-                assignments_data = item_data.pop('assignments')
+                assignments_data = self._resolve_shares(item_data)
                 item = Item.objects.create(bill=instance, **item_data)
                 for assignment_data in assignments_data:
                     ItemAssignment.objects.create(item=item, **assignment_data)
