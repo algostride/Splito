@@ -118,49 +118,78 @@ class BillSerializer(serializers.ModelSerializer):
         return resolved
 
     def validate(self, data):
-        items_data = data.get('items', self.initial_data.get('items', []))
-        total_amount = data.get('total_amount', self.initial_data.get('total_amount'))
+        """Guard each field against the data actually present.
 
-        if items_data and total_amount is not None:
-            total_amount = Decimal(str(total_amount))
-            items_total = Decimal('0.00')
+        Keying these checks off `group and items_data` together meant a PATCH
+        carrying only `items` skipped all of them, letting a share be assigned
+        to a non-member and leaving shares that don't sum to the item amount.
+        """
+        from apps.groups.models import Membership
 
-            for item_data in items_data:
-                item_amount = Decimal(str(item_data['amount']))
-                assignments = self._resolve_shares(item_data)
-                shares_total = sum(Decimal(str(a['share_amount'])) for a in assignments)
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        items_data = data.get('items', None)
+        if items_data is None and self.instance is None:
+            items_data = self.initial_data.get('items', [])
 
-                if shares_total != item_amount:
-                    raise serializers.ValidationError(
-                        f"Item '{item_data.get('name', '')}' shares ({shares_total}) don't sum to item amount ({item_amount})."
-                    )
-                items_total += item_amount
+        group = data.get('group') or getattr(self.instance, 'group', None)
 
-            if items_total != total_amount:
-                raise serializers.ValidationError(
-                    f"Sum of item amounts ({items_total}) doesn't match total bill amount ({total_amount})."
-                )
-
-        group = data.get('group')
-        if group and items_data:
-            from apps.groups.models import Membership
-            user = self.context['request'].user
+        if group is not None and user is not None and user.is_authenticated:
             if not Membership.objects.filter(group=group, user=user).exists():
                 raise serializers.ValidationError("You are not a member of this group.")
+        elif group is not None:
+            raise serializers.ValidationError("You must be logged in to modify a bill.")
 
+        if group is not None:
             member_ids = set(Membership.objects.filter(group=group).values_list('user_id', flat=True))
+
             paid_by = data.get('paid_by')
-            if paid_by and paid_by.id not in member_ids:
+            if paid_by is not None and paid_by.id not in member_ids:
                 raise serializers.ValidationError("paid_by user is not a member of this group.")
 
-            for item_data in items_data:
-                for assignment in item_data.get('assignments', []):
-                    if assignment.get('user_id') not in member_ids:
+            if items_data is not None:
+                for item_data in items_data:
+                    for assignment in item_data.get('assignments', []):
+                        if assignment.get('user_id') not in member_ids:
+                            raise serializers.ValidationError(
+                                f"User {assignment.get('user_id')} is not a member of this group."
+                            )
+
+        if items_data:
+            total_amount = data.get('total_amount')
+            if total_amount is None and self.instance is not None:
+                total_amount = self.instance.total_amount
+
+            if total_amount is not None:
+                total_amount = Decimal(str(total_amount))
+                items_total = Decimal('0.00')
+
+                for item_data in items_data:
+                    item_amount = Decimal(str(item_data['amount']))
+                    assignments = self._resolve_shares(item_data)
+                    shares_total = sum(Decimal(str(a['share_amount'])) for a in assignments)
+
+                    if shares_total != item_amount:
                         raise serializers.ValidationError(
-                            f"User {assignment.get('user_id')} is not a member of this group."
+                            f"Item '{item_data.get('name', '')}' shares ({shares_total}) don't sum to item amount ({item_amount})."
                         )
+                    items_total += item_amount
+
+                if items_total != total_amount:
+                    raise serializers.ValidationError(
+                        f"Sum of item amounts ({items_total}) doesn't match total bill amount ({total_amount})."
+                    )
 
         return data
+
+    def _write_items(self, bill, items_data):
+        for item_data in items_data:
+            assignments_data = self._resolve_shares(item_data)
+            fields = {key: value for key, value in item_data.items() if key != 'assignments'}
+            item = Item.objects.create(bill=bill, **fields)
+
+            for assignment_data in assignments_data:
+                ItemAssignment.objects.create(item=item, **assignment_data)
 
     @transaction.atomic
     def create(self, validated_data):
@@ -168,19 +197,18 @@ class BillSerializer(serializers.ModelSerializer):
         user = self.context['request'].user
         paid_by = validated_data.pop('paid_by', None) or user
         bill = Bill.objects.create(created_by=user, paid_by=paid_by, **validated_data)
-
-        for item_data in items_data:
-            assignments_data = self._resolve_shares(item_data)
-            item = Item.objects.create(bill=bill, **item_data)
-
-            for assignment_data in assignments_data:
-                ItemAssignment.objects.create(item=item, **assignment_data)
-
+        self._write_items(bill, items_data)
         return bill
 
     @transaction.atomic
     def update(self, instance, validated_data):
         items_data = validated_data.pop('items', None)
+
+        # A bill's type is fixed at creation. The edit form is chosen from the
+        # stored value, so accepting a change here could only mislabel the bill
+        # -- and flipping a multi-item bill to 'simple' would have the next
+        # edit truncate it to items[0].
+        validated_data.pop('bill_type', None)
 
         paid_by = validated_data.pop('paid_by', None)
         if paid_by is not None:
@@ -192,10 +220,6 @@ class BillSerializer(serializers.ModelSerializer):
 
         if items_data is not None:
             instance.items.all().delete()
-            for item_data in items_data:
-                assignments_data = self._resolve_shares(item_data)
-                item = Item.objects.create(bill=instance, **item_data)
-                for assignment_data in assignments_data:
-                    ItemAssignment.objects.create(item=item, **assignment_data)
+            self._write_items(instance, items_data)
 
         return instance
