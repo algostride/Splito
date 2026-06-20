@@ -6,6 +6,7 @@ from decimal import Decimal
 import importlib
 from apps.groups.models import Group, Membership
 from apps.bills.models import Bill, Item, ItemAssignment
+from apps.settlements.models import Settlement
 
 User = get_user_model()
 
@@ -65,6 +66,256 @@ class BillTests(APITestCase):
             ['newest', 'middle', 'oldest'],
             'bills must be listed newest first',
         )
+
+    def test_create_bill_simple(self):
+        payload = {
+            'group': str(self.group.id),
+            'title': 'Dinner',
+            'total_amount': '100.00',
+            'currency': 'INR',
+            'paid_by': str(self.user1.id),
+            'items': [
+                {
+                    'name': 'Dinner',
+                    'amount': '100.00',
+                    'assignments': [
+                        {'user_id': str(self.user1.id), 'share_amount': '50.00'},
+                        {'user_id': str(self.user2.id), 'share_amount': '50.00'},
+                    ],
+                }
+            ],
+        }
+        response = self.client.post('/api/v1/bills/', payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['title'], 'Dinner')
+        self.assertEqual(len(response.data['items']), 1)
+        self.assertEqual(len(response.data['items'][0]['assignments']), 2)
+
+    def test_create_bill_compound(self):
+        payload = {
+            'group': str(self.group.id),
+            'title': 'Party',
+            'total_amount': '300.00',
+            'currency': 'INR',
+            'paid_by': str(self.user1.id),
+            'items': [
+                {
+                    'name': 'Food',
+                    'amount': '200.00',
+                    'assignments': [
+                        {'user_id': str(self.user1.id), 'share_amount': '100.00'},
+                        {'user_id': str(self.user2.id), 'share_amount': '100.00'},
+                    ],
+                },
+                {
+                    'name': 'Drinks',
+                    'amount': '100.00',
+                    'assignments': [
+                        {'user_id': str(self.user1.id), 'share_amount': '33.34'},
+                        {'user_id': str(self.user2.id), 'share_amount': '33.33'},
+                        {'user_id': str(self.user3.id), 'share_amount': '33.33'},
+                    ],
+                },
+            ],
+        }
+        response = self.client.post('/api/v1/bills/', payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(len(response.data['items']), 2)
+
+    def test_bill_total_mismatch(self):
+        payload = {
+            'group': str(self.group.id),
+            'title': 'Mismatch',
+            'total_amount': '200.00',
+            'currency': 'INR',
+            'paid_by': str(self.user1.id),
+            'items': [
+                {
+                    'name': 'Item',
+                    'amount': '100.00',
+                    'assignments': [
+                        {'user_id': str(self.user1.id), 'share_amount': '100.00'},
+                    ],
+                }
+            ],
+        }
+        response = self.client.post('/api/v1/bills/', payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_bill_shares_mismatch(self):
+        payload = {
+            'group': str(self.group.id),
+            'title': 'Mismatch',
+            'total_amount': '100.00',
+            'currency': 'INR',
+            'paid_by': str(self.user1.id),
+            'items': [
+                {
+                    'name': 'Item',
+                    'amount': '100.00',
+                    'assignments': [
+                        {'user_id': str(self.user1.id), 'share_amount': '60.00'},
+                        {'user_id': str(self.user2.id), 'share_amount': '30.00'},
+                    ],
+                }
+            ],
+        }
+        response = self.client.post('/api/v1/bills/', payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_bill_non_member_assignment(self):
+        outsider = User.objects.create_user(
+            email='outsider@example.com', name='Outsider', password='pass12345'
+        )
+        payload = {
+            'group': str(self.group.id),
+            'title': 'Bad Assignment',
+            'total_amount': '100.00',
+            'currency': 'INR',
+            'paid_by': str(self.user1.id),
+            'items': [
+                {
+                    'name': 'Item',
+                    'amount': '100.00',
+                    'assignments': [
+                        {'user_id': str(outsider.id), 'share_amount': '100.00'},
+                    ],
+                }
+            ],
+        }
+        response = self.client.post('/api/v1/bills/', payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_list_bills_filtered(self):
+        Bill.objects.create(
+            group=self.group, created_by=self.user1, paid_by=self.user1,
+            title='Group Bill', total_amount='50.00', currency='INR'
+        )
+        other_group = Group.objects.create(name='Other', created_by=self.user2)
+        Bill.objects.create(
+            group=other_group, created_by=self.user2, paid_by=self.user2,
+            title='Other Bill', total_amount='75.00', currency='INR'
+        )
+
+        response = self.client.get(f'/api/v1/bills/?group={self.group.id}')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['title'], 'Group Bill')
+
+    def test_update_bill(self):
+        bill = Bill.objects.create(
+            group=self.group, created_by=self.user1, paid_by=self.user1,
+            title='Old Title', total_amount='100.00', currency='INR'
+        )
+        Item.objects.create(bill=bill, name='Old Item', amount='100.00')
+
+        payload = {
+            'group': str(self.group.id),
+            'title': 'New Title',
+            'total_amount': '150.00',
+            'currency': 'INR',
+            'paid_by': str(self.user1.id),
+            'items': [
+                {
+                    'name': 'New Item',
+                    'amount': '150.00',
+                    'assignments': [
+                        {'user_id': str(self.user1.id), 'share_amount': '75.00'},
+                        {'user_id': str(self.user2.id), 'share_amount': '75.00'},
+                    ],
+                }
+            ],
+        }
+        response = self.client.put(
+            f'/api/v1/bills/{bill.id}/', payload, format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['title'], 'New Title')
+        self.assertEqual(len(response.data['items']), 1)
+        self.assertEqual(response.data['items'][0]['name'], 'New Item')
+
+    def test_create_bill_uneven_split(self):
+        payload = {
+            'group': str(self.group.id),
+            'title': 'Uneven Split',
+            'total_amount': '100.00',
+            'currency': 'INR',
+            'paid_by': str(self.user1.id),
+            'items': [
+                {
+                    'name': 'Item',
+                    'amount': '100.00',
+                    'assignments': [
+                        {'user_id': str(self.user1.id), 'share_amount': '60.00'},
+                        {'user_id': str(self.user2.id), 'share_amount': '40.00'},
+                    ],
+                }
+            ],
+        }
+        response = self.client.post('/api/v1/bills/', payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        assignments = response.data['items'][0]['assignments']
+        alice_share = next(a for a in assignments if a['user_id'] == str(self.user1.id))
+        bob_share = next(a for a in assignments if a['user_id'] == str(self.user2.id))
+        self.assertEqual(float(alice_share['share_amount']), 60.0)
+        self.assertEqual(float(bob_share['share_amount']), 40.0)
+
+    def test_create_bill_share_based(self):
+        payload = {
+            'group': str(self.group.id),
+            'title': 'Share Based',
+            'total_amount': '300.00',
+            'currency': 'INR',
+            'paid_by': str(self.user1.id),
+            'items': [
+                {
+                    'name': 'Item',
+                    'amount': '300.00',
+                    'assignments': [
+                        {'user_id': str(self.user1.id), 'share_amount': '200.00'},
+                        {'user_id': str(self.user2.id), 'share_amount': '100.00'},
+                    ],
+                }
+            ],
+        }
+        response = self.client.post('/api/v1/bills/', payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        assignments = response.data['items'][0]['assignments']
+        alice_share = next(a for a in assignments if a['user_id'] == str(self.user1.id))
+        bob_share = next(a for a in assignments if a['user_id'] == str(self.user2.id))
+        self.assertEqual(float(alice_share['share_amount']), 200.0)
+        self.assertEqual(float(bob_share['share_amount']), 100.0)
+
+    def test_create_bill_single_payer(self):
+        payload = {
+            'group': str(self.group.id),
+            'title': 'Solo Bill',
+            'total_amount': '100.00',
+            'currency': 'INR',
+            'paid_by': str(self.user1.id),
+            'items': [
+                {
+                    'name': 'Item',
+                    'amount': '100.00',
+                    'assignments': [
+                        {'user_id': str(self.user1.id), 'share_amount': '100.00'},
+                    ],
+                }
+            ],
+        }
+        response = self.client.post('/api/v1/bills/', payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(len(response.data['items'][0]['assignments']), 1)
+
+    def test_delete_bill(self):
+        bill = Bill.objects.create(
+            group=self.group, created_by=self.user1, paid_by=self.user1,
+            title='To Delete', total_amount='50.00', currency='INR'
+        )
+        response = self.client.delete(f'/api/v1/bills/{bill.id}/')
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Bill.objects.filter(id=bill.id).exists())
+
     def _percent_payload(self, percents, total='1000.00'):
         return {
             'group': str(self.group.id),
@@ -248,3 +499,192 @@ class BillTests(APITestCase):
             sum(Decimal(a.share_amount) for a in compound_item.assignments.all()),
             Decimal('1000.00'),
         )
+
+    def _make_bill(self, creator, title='Bill', total='100.00', items=True):
+        bill = Bill.objects.create(
+            group=self.group, created_by=creator, paid_by=creator,
+            title=title, total_amount=total, currency='INR', bill_type='compound',
+        )
+        if items:
+            item = Item.objects.create(bill=bill, name=title, amount=total)
+            ItemAssignment.objects.create(
+                item=item, user=creator, share_amount=total, split_value=Decimal('100.000000')
+            )
+        return bill
+
+    def test_non_member_cannot_create_a_settlement_in_a_group(self):
+        outsider = User.objects.create_user(
+            email='mallory@example.com', name='Mallory', password='pass12345'
+        )
+        self.client.force_authenticate(user=outsider)
+        response = self.client.post('/api/v1/settlements/', {
+            'group': str(self.group.id),
+            'payer': str(self.user2.id),
+            'payee': str(self.user1.id),
+            'amount': '500.00',
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Settlement.objects.count(), 0)
+
+    def test_non_member_cannot_read_a_bill(self):
+        outsider = User.objects.create_user(
+            email='mallory@example.com', name='Mallory', password='pass12345'
+        )
+        bill = self._make_bill(self.user1)
+        self.client.force_authenticate(user=outsider)
+        self.assertEqual(self.client.get(f'/api/v1/bills/{bill.id}/').status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_member_cannot_delete_another_members_bill(self):
+        bill = self._make_bill(self.user1)
+        self.client.force_authenticate(user=self.user2)
+        response = self.client.delete(f'/api/v1/bills/{bill.id}/')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(Bill.objects.filter(id=bill.id).exists())
+
+    def test_creator_can_delete_their_own_bill(self):
+        bill = self._make_bill(self.user1)
+        self.client.force_authenticate(user=self.user1)
+        self.assertEqual(self.client.delete(f'/api/v1/bills/{bill.id}/').status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Bill.objects.filter(id=bill.id).exists())
+
+    def test_patch_items_only_cannot_assign_a_non_member(self):
+        outsider = User.objects.create_user(
+            email='mallory@example.com', name='Mallory', password='pass12345'
+        )
+        bill = self._make_bill(self.user1)
+        self.client.force_authenticate(user=self.user1)
+        response = self.client.patch(f'/api/v1/bills/{bill.id}/', {
+            'items': [{
+                'name': 'Item',
+                'amount': '100.00',
+                'assignments': [{'user_id': str(outsider.id), 'split_value': '100'}],
+            }],
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_patch_items_only_cannot_break_the_sum(self):
+        bill = self._make_bill(self.user1)
+        self.client.force_authenticate(user=self.user1)
+        response = self.client.patch(f'/api/v1/bills/{bill.id}/', {
+            'items': [{
+                'name': 'Item',
+                'amount': '100.00',
+                'assignments': [
+                    {'user_id': str(self.user1.id), 'share_amount': '70.00'},
+                    {'user_id': str(self.user2.id), 'share_amount': '20.00'},
+                ],
+            }],
+        }, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_patch_cannot_move_a_bill_to_another_group(self):
+        other = Group.objects.create(name='Other', created_by=self.user2)
+        bill = self._make_bill(self.user1)
+        self.client.force_authenticate(user=self.user1)
+        response = self.client.patch(f'/api/v1/bills/{bill.id}/', {'group': str(other.id)}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        bill.refresh_from_db()
+        self.assertEqual(bill.group_id, self.group.id)
+
+    def test_patch_paid_by_to_a_non_member_is_rejected(self):
+        outsider = User.objects.create_user(
+            email='mallory@example.com', name='Mallory', password='pass12345'
+        )
+        bill = self._make_bill(self.user1)
+        self.client.force_authenticate(user=self.user1)
+        response = self.client.patch(f'/api/v1/bills/{bill.id}/', {'paid_by': str(outsider.id)}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_malformed_group_query_param_is_a_400(self):
+        self.client.force_authenticate(user=self.user1)
+        self.assertEqual(
+            self.client.get('/api/v1/bills/?group=not-a-uuid').status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        self.assertEqual(
+            self.client.get('/api/v1/settlements/?group=not-a-uuid').status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
+    def test_under_specified_percent_split_is_rejected(self):
+        """60/30 leaves a rupee unaccounted for; it must not be rescaled."""
+        response = self.client.post(
+            '/api/v1/bills/', self._percent_payload(['60', '30', '0'], total='100.00'), format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_over_specified_percent_split_is_rejected(self):
+        response = self.client.post(
+            '/api/v1/bills/', self._percent_payload(['60', '50', '0'], total='100.00'), format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_even_percent_split_from_the_split_evenly_button_saves(self):
+        """What evenPercents() produces for 3 people must be accepted."""
+        response = self.client.post(
+            '/api/v1/bills/', self._percent_payload(['33.33', '33.33', '33.34']), format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        amounts = [Decimal(a['share_amount']) for a in response.data['items'][0]['assignments']]
+        self.assertEqual(sum(amounts), Decimal('1000.00'))
+
+    def test_even_shares_split_on_a_rupee_total_saves(self):
+        payload = {
+            'group': str(self.group.id),
+            'title': 'Odd Total',
+            'total_amount': '7.00',
+            'currency': 'INR',
+            'paid_by': str(self.user1.id),
+            'items': [{
+                'name': 'Odd Total',
+                'amount': '7.00',
+                'split_mode': 'shares',
+                'assignments': [
+                    {'user_id': str(u.id), 'split_value': '1'}
+                    for u in (self.user1, self.user2, self.user3)
+                ],
+            }],
+        }
+        response = self.client.post('/api/v1/bills/', payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        amounts = sorted(Decimal(a['share_amount']) for a in response.data['items'][0]['assignments'])
+        self.assertEqual(sum(amounts), Decimal('7.00'))
+        self.assertEqual(amounts, [Decimal('2.33'), Decimal('2.33'), Decimal('2.34')])
+
+    def test_update_cannot_change_a_bills_type(self):
+        """Editing picks the form from the stored type, so it must not move."""
+        bill = Bill.objects.create(
+            group=self.group, created_by=self.user1, paid_by=self.user1,
+            title='Compound', total_amount=Decimal('150.00'), currency='INR', bill_type='compound',
+        )
+        for name, amount in (('Food', '100.00'), ('Tax', '50.00')):
+            item = Item.objects.create(bill=bill, name=name, amount=Decimal(amount))
+            ItemAssignment.objects.create(
+                item=item, user=self.user1, share_amount=Decimal(amount), split_value=Decimal('100.000000')
+            )
+
+        payload = {
+            'group': str(self.group.id),
+            'title': 'Compound',
+            'total_amount': '150.00',
+            'currency': 'INR',
+            'bill_type': 'simple',
+            'paid_by': str(self.user1.id),
+            'items': [
+                {
+                    'name': name,
+                    'amount': amount,
+                    'split_mode': 'percent',
+                    'assignments': [
+                        {'user_id': str(self.user1.id), 'share_amount': amount, 'split_value': '100'}
+                    ],
+                }
+                for name, amount in (('Food', '100.00'), ('Tax', '50.00'))
+            ],
+        }
+        response = self.client.put(f'/api/v1/bills/{bill.id}/', payload, format='json')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        bill.refresh_from_db()
+        self.assertEqual(bill.bill_type, 'compound')
+        self.assertEqual(bill.items.count(), 2)
