@@ -151,6 +151,48 @@ def compute_user_nets(group_ids, user_id):
     return result
 
 
+def compute_friend_positions(group_ids, user_id):
+    """What each co-member owes `user_id`, across a set of groups.
+
+    Returns {other_id: {'total': Decimal, 'per_group': {group_id: Decimal}}},
+    where a positive figure means they owe `user_id` and a negative one means
+    `user_id` owes them.
+
+    The figure is the *pairwise* amount between the two of them within a group,
+    not that person's net for the whole group. A group net also sweeps up debts
+    to everyone else in it, which is not this person's business on a page about
+    what you owe them.
+
+    Groups where the two of them are square are left out of `per_group` so
+    callers do not have to filter, and so a card stays short when you share a
+    group but owe nothing in it. `total` still counts those groups, because it
+    is the sum and they contribute zero.
+
+    Reuses the batched loader, so the whole page costs the same four queries
+    however many friends or bills are involved.
+    """
+    inputs = load_debt_inputs(group_ids)
+    positions = {}
+
+    for group_id, data in inputs.items():
+        members = data['members']
+        if user_id not in members:
+            continue
+        pairwise = _build_pairwise(
+            members, data['bills'], data['assignments'], data['settlements']
+        )
+        for other_id in members:
+            if other_id == user_id:
+                continue
+            net = pairwise[other_id][user_id] - pairwise[user_id][other_id]
+            entry = positions.setdefault(other_id, {'total': ZERO, 'per_group': {}})
+            entry['total'] += net
+            if net != ZERO:
+                entry['per_group'][group_id] = net
+
+    return positions
+
+
 def compute_balances(group_id):
     """Net balance per member. Sums to exactly zero by construction."""
     members, pairwise = compute_pairwise_debts(group_id)
