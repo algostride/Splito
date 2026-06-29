@@ -333,3 +333,66 @@ class DebtTests(APITestCase):
         self.assertEqual(Decimal(alice['gets_from'][0]['amount']), Decimal('100.00'))
         self.assertEqual(len(bob['owes']), 1)
         self.assertEqual(Decimal(bob['owes'][0]['amount']), Decimal('100.00'))
+
+    def test_balances_always_net_to_zero(self):
+        bill = Bill.objects.create(
+            group=self.group, created_by=self.user1, paid_by=self.user1,
+            title='Dinner', total_amount=Decimal('1000.00'), currency='INR'
+        )
+        item = Item.objects.create(bill=bill, name='Dinner', amount=Decimal('1000.00'))
+        ItemAssignment.objects.create(item=item, user=self.user2, share_amount=Decimal('333.33'))
+        ItemAssignment.objects.create(item=item, user=self.user3, share_amount=Decimal('333.33'))
+        ItemAssignment.objects.create(item=item, user=self.user1, share_amount=Decimal('333.34'))
+
+        response = self.client.get(f'/api/v1/settlements/balances/?group={self.group.id}')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        total = sum(Decimal(b['net_balance']) for b in response.data)
+        self.assertEqual(total, Decimal('0.00'))
+
+    def test_deleting_a_settled_bill_stops_the_phantom_debt(self):
+        bill = Bill.objects.create(
+            group=self.group, created_by=self.user1, paid_by=self.user1,
+            title='Dinner', total_amount=Decimal('100.00'), currency='INR'
+        )
+        item = Item.objects.create(bill=bill, name='Dinner', amount=Decimal('100.00'))
+        ItemAssignment.objects.create(item=item, user=self.user1, share_amount=Decimal('50.00'))
+        ItemAssignment.objects.create(item=item, user=self.user2, share_amount=Decimal('50.00'))
+
+        Settlement.objects.create(
+            group=self.group, payer=self.user2, payee=self.user1, amount=Decimal('50.00')
+        )
+        before = self.client.get(f'/api/v1/settlements/balances/?group={self.group.id}')
+        self.assertEqual(sum(Decimal(b['net_balance']) for b in before.data), Decimal('0.00'))
+
+        bill.delete()
+
+        after = self.client.get(f'/api/v1/settlements/balances/?group={self.group.id}')
+        self.assertEqual(sum(Decimal(b['net_balance']) for b in after.data), Decimal('0.00'))
+        for entry in after.data:
+            self.assertEqual(Decimal(entry['net_balance']), Decimal('0.00'))
+
+    def test_over_settling_is_clamped_and_cannot_create_credit(self):
+        bill = Bill.objects.create(
+            group=self.group, created_by=self.user1, paid_by=self.user1,
+            title='Dinner', total_amount=Decimal('100.00'), currency='INR'
+        )
+        item = Item.objects.create(bill=bill, name='Dinner', amount=Decimal('100.00'))
+        ItemAssignment.objects.create(item=item, user=self.user1, share_amount=Decimal('50.00'))
+        ItemAssignment.objects.create(item=item, user=self.user2, share_amount=Decimal('50.00'))
+
+        Settlement.objects.create(
+            group=self.group, payer=self.user2, payee=self.user1, amount=Decimal('999.00')
+        )
+
+        balances = self.client.get(f'/api/v1/settlements/balances/?group={self.group.id}').data
+        debts = self.client.get(f'/api/v1/settlements/debts/?group={self.group.id}').data
+        by_id = {d['user_id']: d for d in debts}
+        self.assertEqual(
+            Decimal(by_id[str(self.user1.id)]['net_balance']),
+            Decimal(next(b['net_balance'] for b in balances if b['user_id'] == str(self.user1.id))),
+        )
+        for entry in balances:
+            self.assertEqual(Decimal(entry['net_balance']), Decimal('0.00'))
+        for entry in debts:
+            self.assertEqual(entry['owes'], [])
+            self.assertEqual(entry['gets_from'], [])
