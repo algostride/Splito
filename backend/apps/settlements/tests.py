@@ -396,3 +396,149 @@ class DebtTests(APITestCase):
         for entry in debts:
             self.assertEqual(entry['owes'], [])
             self.assertEqual(entry['gets_from'], [])
+
+class FriendsTests(APITestCase):
+    """Friendship is derived from co-membership: no Friend model, no list."""
+
+    URL = '/api/v1/settlements/friends/'
+
+    def setUp(self):
+        self.alice = User.objects.create_user(
+            email='alice@example.com', name='Alice', password='pass12345'
+        )
+        self.bob = User.objects.create_user(
+            email='bob@example.com', name='Bob', password='pass12345'
+        )
+        self.cara = User.objects.create_user(
+            email='cara@example.com', name='Cara', password='pass12345'
+        )
+        self.client.force_authenticate(user=self.alice)
+
+    def add(self, group_name, *users):
+        group = Group.objects.create(name=group_name, created_by=self.alice)
+        for user in users:
+            Membership.objects.create(user=user, group=group)
+        return group
+
+    def bill(self, group, payer, amount, shares):
+        """A bill where each member owes `amount / len(shares)` to the payer."""
+        bill = Bill.objects.create(
+            group=group, created_by=self.alice, paid_by=payer, title='Shared',
+            total_amount=amount, currency='INR',
+        )
+        item = Item.objects.create(bill=bill, name='Shared', amount=amount)
+        per = amount / len(shares)
+        for user in shares:
+            ItemAssignment.objects.create(item=item, user=user, share_amount=per)
+        return bill
+
+    def test_co_membership_is_the_whole_definition(self):
+        self.add('Flat 302', self.alice, self.bob)
+        self.add('Weekend', self.alice, self.cara)
+        names = [f['name'] for f in self.client.get(self.URL).data]
+        self.assertEqual(sorted(names), ['Bob', 'Cara'])
+
+    def test_you_are_not_your_own_friend(self):
+        self.add('Solo', self.alice)
+        self.assertEqual(self.client.get(self.URL).data, [])
+
+    def test_user_with_no_groups_gets_an_empty_list(self):
+        self.assertEqual(self.client.get(self.URL).status_code, status.HTTP_200_OK)
+        self.assertEqual(self.client.get(self.URL).data, [])
+
+    def test_shares_a_group_in_three_places_appears_once(self):
+        self.add('Flat 302', self.alice, self.bob)
+        self.add('Weekend', self.alice, self.bob)
+        self.add('Ski', self.alice, self.bob)
+        data = self.client.get(self.URL).data
+        self.assertEqual(len(data), 1)
+        self.assertEqual(data[0]['shared_group_count'], 3)
+        self.assertEqual(len(data[0]['shared_groups']), 3)
+
+    def test_shared_group_count_includes_groups_with_no_balance(self):
+        # The mock counted only the groups with a non-zero figure, so a friend
+        # you shared three groups with but owed nothing in two read as
+        # "1 group in common". The label says groups in common, so it counts
+        # all of them, while per_group stays short.
+        flat = self.add('Flat 302', self.alice, self.bob)
+        self.add('Weekend', self.alice, self.bob)
+        self.bill(flat, self.bob, Decimal('90.00'), [self.alice, self.bob])
+        data = self.client.get(self.URL).data[0]
+        self.assertEqual(data['shared_group_count'], 2)
+        self.assertEqual(len(data['per_group']), 1)
+
+    def test_total_is_the_sum_of_the_per_group_figures(self):
+        flat = self.add('Flat 302', self.alice, self.bob)
+        trip = self.add('Trip', self.alice, self.bob)
+        self.bill(flat, self.bob, Decimal('90.00'), [self.alice, self.bob])
+        self.bill(trip, self.alice, Decimal('40.00'), [self.alice, self.bob])
+        data = self.client.get(self.URL).data[0]
+        summed = sum(Decimal(row['net']) for row in data['per_group'])
+        self.assertEqual(Decimal(data['total']), summed)
+        # Bob paid 45 of the flat bill (so Alice owes him 45), then Alice paid
+        # 20 of the trip (so Bob owes her 20). Net: Alice is 25 behind.
+        self.assertEqual(data['total'], '-25.00')
+
+    def test_per_group_figures_sum_to_my_net_for_that_group(self):
+        # A friend's figure is *my* position with them, not their net, so it
+        # cannot be compared to a row of /balances/ directly. The invariant that
+        # does hold: my group net is exactly the sum of my positions with
+        # everyone else in it. This catches a sign or scope error in the
+        # aggregation that a two-member fixture would hide.
+        flat = self.add('Flat 302', self.alice, self.bob, self.cara)
+        trip = self.add('Trip', self.alice, self.bob, self.cara)
+        self.bill(flat, self.cara, Decimal('90.00'), [self.alice, self.bob, self.cara])
+        self.bill(trip, self.alice, Decimal('60.00'), [self.alice, self.bob, self.cara])
+
+        balances = self.client.get(
+            f'/api/v1/settlements/balances/?group={flat.id}'
+        ).data
+        alice_net = next(
+            Decimal(row['net_balance']) for row in balances if row['user_name'] == 'Alice'
+        )
+        summed = sum(
+            Decimal(row['net'])
+            for friend in self.client.get(self.URL).data
+            for row in friend['per_group']
+            if row['group_id'] == str(flat.id)
+        )
+        self.assertEqual(summed, alice_net)
+
+    def test_settling_in_full_zeroes_the_position(self):
+        flat = self.add('Flat 302', self.alice, self.bob)
+        self.bill(flat, self.bob, Decimal('90.00'), [self.alice, self.bob])
+        self.assertEqual(self.client.get(self.URL).data[0]['total'], '-45.00')
+        # Alice owes Bob, so Alice is the payer here.
+        Settlement.objects.create(
+            group=flat, payer=self.alice, payee=self.bob, amount=Decimal('45.00')
+        )
+        data = self.client.get(self.URL).data[0]
+        self.assertEqual(data['total'], '0.00')
+        self.assertEqual(data['per_group'], [])
+        # Still a friend: the relationship is the shared group, not the debt.
+        self.assertEqual(data['shared_group_count'], 1)
+
+    def test_email_is_included(self):
+        self.add('Flat 302', self.alice, self.bob)
+        self.assertEqual(self.client.get(self.URL).data[0]['email'], 'bob@example.com')
+
+    def test_sorted_by_name(self):
+        self.add('Flat 302', self.alice, self.cara, self.bob)
+        names = [f['name'] for f in self.client.get(self.URL).data]
+        self.assertEqual(names, sorted(names, key=str.lower))
+
+    def test_a_non_member_never_leaks_a_group(self):
+        # Carol is in a group Alice is not. Her name must not appear at all,
+        # and no group she belongs to may be named in the response.
+        self.add('Flat 302', self.alice, self.bob)
+        self.add('Secret', self.bob, self.cara)
+        raw = str(self.client.get(self.URL).data)
+        self.assertNotIn('Cara', raw)
+        self.assertNotIn('Secret', raw)
+
+    def test_requires_authentication(self):
+        self.client.force_authenticate(user=None)
+        self.assertIn(
+            self.client.get(self.URL).status_code,
+            (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN),
+        )
