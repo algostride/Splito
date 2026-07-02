@@ -1,0 +1,122 @@
+{
+  "_comment": [
+    "Cross-language API response contract. Read by BOTH:",
+    "  - the Playwright fixtures in frontend/e2e/fixtures/data.js, so a stub",
+    "    can never quietly claim a field the backend does not send;",
+    "  - backend/apps/settlements/tests.py (ApiShapeContractTests), which",
+    "    renders the real DRF responses and fails if a key moves.",
+    "Adding a serializer field means adding it here too, or the backend suite",
+    "fails. That is the point: a stub cannot drift away from reality silently."
+  ],
+  "shapes": {
+    "groups_list_item": [
+      "id",
+      "name",
+      "created_by",
+      "created_at",
+      "member_count",
+      "total_spend",
+      "your_net"
+    ],
+    "group_detail": [
+      "id",
+      "name",
+      "created_by",
+      "created_at",
+      "member_count",
+      "total_spend",
+      "your_net"
+    ],
+    "user_basic": [
+      "id",
+      "email",
+      "name"
+    ],
+    "user_full": [
+      "id",
+      "email",
+      "name",
+      "created_at"
+    ],
+    "membership_item": [
+      "id",
+      "user",
+      "joined_at"
+    ],
+    "bill_item": [
+      "id",
+      "group",
+      "title",
+      "total_amount",
+      "currency",
+      "bill_type",
+      "created_by",
+      "paid_by",
+      "paid_by_detail",
+      "created_at",
+      "items"
+    ],
+    "item_assignments_item": [
+      "id",
+      "user_id",
+      "user",
+      "share_amount",
+      "split_value"
+    ],
+    "user_debts_item": [
+      "user_id",
+      "user_name",
+      "net_balance",
+      "owes",
+      "gets_from"
+    ],
+    "settlement_item": [
+      "id",
+      "group",
+      "payer",
+      "payee",
+      "amount",
+      "settled_at"
+    ],
+    "friend_item": [
+      "user_id",
+      "name",
+      "email",
+      "shared_groups",
+      "shared_group_count",
+      "total",
+      "per_group"
+    ],
+    "friend_shared_group": [
+      "id",
+      "name"
+    ],
+    "friend_per_group": [
+      "group_id",
+      "group_name",
+      "net"
+    ],
+    "user_debts_leg": [
+      "user_id",
+      "user_name",
+      "amount"
+    ],
+    "bill_detail_item": [
+      "id",
+      "name",
+      "amount",
+      "split_mode",
+      "assignments"
+    ]
+  },
+  "endpoints": {
+    "GET groups/": "groups_list_item[]",
+    "GET groups/<id>/": "group_detail",
+    "GET groups/<id>/members/": "membership_item[]",
+    "GET bills/?group=<id>": "bill_item[]",
+    "GET bills/<id>/": "bill_item",
+    "GET settlements/debts/?group=<id>": "user_debts_item[]",
+    "GET settlements/?group=<id>": "settlement_item[]",
+    "GET settlements/friends/": "friend_item[]"
+  }
+}

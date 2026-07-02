@@ -1,4 +1,6 @@
+import json
 from decimal import Decimal
+from pathlib import Path
 from rest_framework.test import APITestCase
 from rest_framework import status
 from django.contrib.auth import get_user_model
@@ -397,6 +399,7 @@ class DebtTests(APITestCase):
             self.assertEqual(entry['owes'], [])
             self.assertEqual(entry['gets_from'], [])
 
+
 class FriendsTests(APITestCase):
     """Friendship is derived from co-membership: no Friend model, no list."""
 
@@ -541,4 +544,104 @@ class FriendsTests(APITestCase):
         self.assertIn(
             self.client.get(self.URL).status_code,
             (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN),
+        )
+
+
+class ApiShapeContractTests(APITestCase):
+    """Keeps the E2E fixtures from becoming fiction.
+
+    The Playwright suite stubs the API from frontend/e2e/fixtures/data.js. A
+    stub cannot notice that the backend changed shape, so this asserts the real
+    DRF responses against api-shapes.json at the repo root — the same file the
+    fixtures are built from. Rename a serializer field and this fails.
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        path = Path(__file__).resolve().parents[3] / 'api-shapes.json'
+        if not path.exists():
+            raise AssertionError(f'contract file missing: {path}')
+        cls.shapes = json.loads(path.read_text())['shapes']
+
+    def assertShape(self, payload, shape_name):
+        expected = set(self.shapes[shape_name])
+        actual = set(payload)
+        self.assertEqual(
+            actual, expected,
+            f'{shape_name} drifted from api-shapes.json. '
+            f'missing: {sorted(expected - actual)}  unexpected: {sorted(actual - expected)}',
+        )
+
+    def setUp(self):
+        self.alice = User.objects.create_user(
+            email='alice@example.com', name='Alice', password='pass12345'
+        )
+        self.bob = User.objects.create_user(
+            email='bob@example.com', name='Bob', password='pass12345'
+        )
+        self.group = Group.objects.create(name='Flat 302', created_by=self.alice)
+        Membership.objects.create(user=self.alice, group=self.group)
+        Membership.objects.create(user=self.bob, group=self.group)
+        self.client.force_authenticate(user=self.alice)
+
+        bill = Bill.objects.create(
+            group=self.group, created_by=self.alice, paid_by=self.bob, title='Groceries',
+            total_amount=Decimal('90.00'), currency='INR',
+        )
+        item = Item.objects.create(bill=bill, name='Groceries', amount=Decimal('90.00'))
+        for user in (self.alice, self.bob):
+            ItemAssignment.objects.create(item=item, user=user, share_amount=Decimal('45.00'))
+
+    def test_groups_list(self):
+        rows = self.client.get('/api/v1/groups/').data
+        self.assertShape(rows[0], 'groups_list_item')
+
+    def test_group_detail(self):
+        rows = self.client.get(f'/api/v1/groups/{self.group.id}/').data
+        self.assertShape(rows, 'group_detail')
+
+    def test_group_members(self):
+        rows = self.client.get(f'/api/v1/groups/{self.group.id}/members/').data
+        self.assertShape(rows[0], 'membership_item')
+        self.assertShape(rows[0]['user'], 'user_basic')
+
+    def test_bills_list(self):
+        rows = self.client.get(f'/api/v1/bills/?group={self.group.id}').data
+        self.assertShape(rows[0], 'bill_item')
+        self.assertShape(rows[0]['items'][0], 'bill_detail_item')
+        self.assertShape(rows[0]['items'][0]['assignments'][0], 'item_assignments_item')
+        self.assertShape(rows[0]['paid_by_detail'], 'user_full')
+        self.assertShape(rows[0]['created_by'], 'user_full')
+
+    def test_debts(self):
+        rows = self.client.get(
+            f'/api/v1/settlements/debts/?group={self.group.id}'
+        ).data
+        self.assertShape(rows[0], 'user_debts_item')
+        self.assertShape(rows[0]['owes'][0], 'user_debts_leg')
+
+    def test_settlements_list(self):
+        Settlement.objects.create(
+            group=self.group, payer=self.bob, payee=self.alice, amount=Decimal('10.00')
+        )
+        rows = self.client.get(f'/api/v1/settlements/?group={self.group.id}').data
+        self.assertShape(rows[0], 'settlement_item')
+
+    def test_friends(self):
+        rows = self.client.get('/api/v1/settlements/friends/').data
+        self.assertShape(rows[0], 'friend_item')
+        self.assertShape(rows[0]['shared_groups'][0], 'friend_shared_group')
+
+    def test_every_declared_shape_is_covered_by_this_class(self):
+        # A shape nobody asserts against is a shape that can drift unnoticed.
+        self.assertEqual(
+            set(self.shapes) - {'bill_detail_item'},
+            {
+                'groups_list_item', 'group_detail', 'user_basic', 'membership_item',
+                'bill_item', 'item_assignments_item', 'user_debts_item',
+                'settlement_item', 'friend_item', 'friend_shared_group',
+                'friend_per_group', 'user_debts_leg', 'user_full',
+            },
+            'a new shape was added to api-shapes.json without a test asserting it',
         )
