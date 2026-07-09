@@ -12,12 +12,19 @@ const baseQuery = fetchBaseQuery({
     },
 });
 
+const AUTH_ENDPOINTS = ['login', 'register'];
+
 const baseQueryWithRefresh = async (args, api, extraOptions) => {
     let result = await baseQuery(args, api, extraOptions);
 
-    if (result.error && result.error.status === 401) {
+    // A wrong password or a duplicate account 401s too. Trying to refresh on
+    // those would rotate the refresh token, and if that refresh failed it
+    // logged the user out of a session they never asked to end.
+    const isAuthEndpoint = AUTH_ENDPOINTS.includes(extraOptions?.endpointName);
+    if (result.error && result.error.status === 401 && !isAuthEndpoint) {
         const refreshToken = api.getState().auth.refreshToken;
         if (!refreshToken) {
+            api.dispatch(api.util.resetApiState());
             api.dispatch(logout());
             return result;
         }
@@ -42,6 +49,10 @@ const baseQueryWithRefresh = async (args, api, extraOptions) => {
 
             result = await baseQuery(args, api, extraOptions);
         } else {
+            // The cache still holds the previous user's groups, bills and
+            // balances, and the next login reads the same cache keys. Clearing
+            // it here is what stops one user seeing another's data.
+            api.dispatch(api.util.resetApiState());
             api.dispatch(logout());
         }
     }
@@ -52,6 +63,6 @@ const baseQueryWithRefresh = async (args, api, extraOptions) => {
 export const api = createApi({
     reducerPath: 'api',
     baseQuery: baseQueryWithRefresh,
-    tagTypes: ['Group', 'Member', 'Bill', 'Settlement'],
+    tagTypes: ['Group', 'Member', 'Bill', 'Settlement', 'Friend'],
     endpoints: () => ({}),
 });
