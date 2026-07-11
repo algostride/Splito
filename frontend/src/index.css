@@ -1,8 +1,368 @@
 @import "tailwindcss";
 
+/* Tailwind v4 does not read tailwind.config.js unless it is pulled in with
+   @config, so theme tokens belong here. This block is the whole design
+   system: colours, shadows, radii, the spacing scale, the type scale and
+   three font stacks. Utilities are generated from the namespaces below, so
+   `--color-surface` gives `bg-surface`/`text-surface`, `--spacing-gutter`
+   gives `p-gutter`/`px-gutter`, `--radius-card` gives `rounded-card`, and so
+   on. Nothing below this file should hardcode a colour literal. */
+@theme {
+  /* Legacy. Login and Register still carry `animate-fade-in-up`; they are
+     outside the shell, so they were not rebuilt on the screen-entered motion
+     system. Delete this token and both usages together once neither remains. */
+  --animate-fade-in-up: fade-in-up 0.5s ease-out forwards;
+
+  /* `animate-fade-in` was on the two modal wrappers with no definition
+     anywhere, so it silently did nothing. The `fade-in` keyframe now exists
+     for the screen entrance, so the token points at that. */
+  --animate-fade-in: fade-in 160ms ease-out both;
+
+  @keyframes fade-in-up {
+    0% {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    100% {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* type scale. The --line-height companions apply to the matching
+     `text-*` utility, so `text-body` is 14px on a 1.55 leading. */
+  --text-display: 1.75rem;
+  --text-display--line-height: 1.15;
+  --text-title: 1.125rem;
+  --text-title--line-height: 1.35;
+  --text-body: 0.875rem;
+  --text-body--line-height: 1.55;
+  --text-meta: 0.75rem;
+  --text-meta--line-height: 1.5;
+
+  --font-body: "Inter", sans-serif;
+  --font-display: "Outfit", sans-serif;
+  /* tabular figures for every amount, so columns of money line up */
+  --font-money: "JetBrains Mono", monospace;
+
+  --color-accent: #4f46e5;
+  --color-accent-2: #6d5ef0;
+  --color-accent-ink: #3b32b8;
+  --color-accent-soft: #eeeffe;
+  --color-bg: #f6f7fc;
+  /* tinted fills for banners. The old palette used red-50/green-50/amber-50
+     for these, which have no dark-mode counterpart, so they are tokens now. */
+  --color-neg-soft: #fdecef;
+  --color-pos-soft: #e6f6f0;
+  --color-warn-soft: #fdf3dd;
+  --color-border: #e7eaf2;
+  --color-border-2: #d8deeb;
+  --color-canvas: #f6f7fc;
+  --color-faint: #868fa3;
+  --color-muted: #525b6e;
+  --color-neg: #c0304a;
+  --color-on-accent: #ffffff;
+  --color-pos: #0e7a5f;
+  /* modal scrim. A separate token rather than a tint of --color-text, which
+     is near-white in dark mode and would make the backdrop a white wash. */
+  --color-scrim: #0b1120;
+  --color-surface: #ffffff;
+  --color-surface-2: #f2f4fa;
+  --color-surface-3: #e9edf6;
+  --color-text: #0b1120;
+  --color-warn: #9a6700;
+
+  --radius-card: 18px;
+  --radius-control: 12px;
+  --radius-pill: 999px;
+
+  --shadow-card: 0 1px 2px rgb(79 70 229 / 0.05), 0 1px 3px rgb(11 17 32 / 0.04);
+  --shadow-pop: 0 4px 10px rgb(79 70 229 / 0.08), 0 28px 56px -16px rgb(11 17 32 / 0.22);
+  --shadow-raised: 0 2px 4px rgb(79 70 229 / 0.06), 0 10px 24px -6px rgb(11 17 32 / 0.1);
+
+  /* spacing scale. `gutter` is the page margin, `card` the inset inside a
+     card, `row` the minimum height of a list row, `rail` the desktop
+     navigation width. */
+  --spacing-avatar: 40px;
+  --spacing-avatar-lg: 48px;
+  --spacing-avatar-sm: 32px;
+  --spacing-avatar-xs: 20px;
+  --spacing-brand: 36px;
+  --spacing-card: 24px;
+  --spacing-control: 40px;
+  --spacing-control-sm: 36px;
+  --spacing-gap: 20px;
+  --spacing-gutter: 32px;
+  --spacing-rail: 248px;
+  --spacing-row: 56px;
+}
+
+/* Light and dark are one palette expressed through the same custom property
+   names, so every component is built from identical utility classes and only
+   this file changes between modes.
+
+   The light palette is a plain `:root` rule rather than
+   `:root[data-mode="light"]`, because it doubles as the fallback: Tailwind
+   tree-shakes the copies @theme declares, so the attribute blocks are the only
+   ones that survive to runtime. If `data-mode` were ever missing, every colour
+   would resolve to nothing; anchored to `:root` the light palette always
+   applies and dark is a pure override.
+
+   Dark is `:root[data-mode="dark"]` at specificity 0,2,0, which outranks both
+   the `:root` fallback and the `:root,:host` block Tailwind emits for @theme.
+   That matters: a bare `[data-mode="dark"]` would tie with `:root` and then
+   depend on write order, whereas this cannot. The attribute is set on <html>
+   by the inline script in index.html, before first paint.
+
+   Radius, spacing, type and fonts are identical in both modes, so they stay in
+   @theme alone and are not repeated here. */
+:root {
+  --color-accent: #4f46e5;
+  --color-accent-2: #6d5ef0;
+  --color-accent-ink: #3b32b8;
+  --color-accent-soft: #eeeffe;
+  --color-bg: #f6f7fc;
+  /* tinted fills for banners. The old palette used red-50/green-50/amber-50
+     for these, which have no dark-mode counterpart, so they are tokens now. */
+  --color-neg-soft: #fdecef;
+  --color-pos-soft: #e6f6f0;
+  --color-warn-soft: #fdf3dd;
+  --color-border: #e7eaf2;
+  --color-border-2: #d8deeb;
+  --color-canvas: #f6f7fc;
+  --color-faint: #868fa3;
+  --color-muted: #525b6e;
+  --color-neg: #c0304a;
+  --color-on-accent: #ffffff;
+  --color-pos: #0e7a5f;
+  /* modal scrim. A separate token rather than a tint of --color-text, which
+     is near-white in dark mode and would make the backdrop a white wash. */
+  --color-scrim: #0b1120;
+  --color-surface: #ffffff;
+  --color-surface-2: #f2f4fa;
+  --color-surface-3: #e9edf6;
+  --color-text: #0b1120;
+  --color-warn: #9a6700;
+  --shadow-card: 0 1px 2px rgb(79 70 229 / 0.05), 0 1px 3px rgb(11 17 32 / 0.04);
+  --shadow-pop: 0 4px 10px rgb(79 70 229 / 0.08), 0 28px 56px -16px rgb(11 17 32 / 0.22);
+  --shadow-raised: 0 2px 4px rgb(79 70 229 / 0.06), 0 10px 24px -6px rgb(11 17 32 / 0.1);
+}
+
+:root[data-mode="dark"] {
+  --color-accent: #7f79f2;
+  --color-accent-2: #948dff;
+  --color-accent-ink: #b9b4ff;
+  --color-accent-soft: #1b1f3a;
+  --color-bg: #090c14;
+  --color-neg-soft: #2b1419;
+  --color-pos-soft: #0f2a20;
+  --color-warn-soft: #2a2113;
+  --color-border: #232a3a;
+  --color-border-2: #2f3849;
+  --color-canvas: #090c14;
+  --color-faint: #6a7488;
+  --color-muted: #98a2b6;
+  --color-neg: #fb7185;
+  --color-on-accent: #080b12;
+  --color-pos: #3ad39f;
+  --color-scrim: #05070c;
+  --color-surface: #111621;
+  --color-surface-2: #191f2c;
+  --color-surface-3: #1f2634;
+  --color-text: #eaeef7;
+  --color-warn: #fbbf24;
+  --shadow-card: 0 1px 2px rgb(0 0 0 / 0.4), 0 1px 3px rgb(0 0 0 / 0.3);
+  --shadow-pop: 0 4px 10px rgb(0 0 0 / 0.45), 0 28px 56px -16px rgb(0 0 0 / 0.6);
+  --shadow-raised: 0 2px 4px rgb(0 0 0 / 0.4), 0 10px 24px -6px rgb(0 0 0 / 0.45);
+}
+
 @layer base {
+  html {
+    /* Reserve the scrollbar gutter permanently. Screens differ in height, so
+       without this the scrollbar appearing and disappearing narrows the
+       viewport and every centred element visibly re-centres. */
+    scrollbar-gutter: stable;
+  }
+
   body {
-    @apply bg-gray-50 text-gray-900;
-    font-family: 'Outfit', sans-serif;
+    @apply bg-canvas text-text font-body;
+    -webkit-font-smoothing: antialiased;
+  }
+
+    /* Amounts and identifiers, wherever they appear. */
+    .tnum {
+      font-variant-numeric: tabular-nums;
+    }
+
+  }
+
+/* Purposeful micro-motion. Everything transform-based is disabled under
+   prefers-reduced-motion, which falls back to a plain fade. */
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes draw-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* .anim-screen is the whole screen container, which holds the sticky header
+   and tab bar, so it must never carry a transform: a downward translate both
+   jumps the header and extends the document's scrollable overflow, which is
+   what conjured a scrollbar for the length of every tab switch. */
+.anim-screen {
+  animation: fade-in 160ms ease-out both;
+}
+
+/* The entrance stagger lives on the body children instead, inside this clip.
+   A downward transform extends the scrollable overflow region and makes the
+   document briefly taller; `clip` contains it without creating a scroll
+   container the way `hidden` would. The inner content has p-gutter, which
+   absorbs the translate and the hover-lift shadows. */
+.anim-screen-body {
+  overflow: clip;
+}
+.anim-screen-body > * {
+  animation: rise 260ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+.anim-screen-body > *:nth-child(1) {
+  animation-delay: 10ms;
+}
+.anim-screen-body > *:nth-child(2) {
+  animation-delay: 45ms;
+}
+.anim-screen-body > *:nth-child(3) {
+  animation-delay: 80ms;
+}
+.anim-screen-body > *:nth-child(4) {
+  animation-delay: 115ms;
+}
+.anim-screen-body > *:nth-child(5) {
+  animation-delay: 150ms;
+}
+.anim-screen-body > *:nth-child(6) {
+  animation-delay: 185ms;
+}
+
+/* Once a screen has been entered, keep it settled. Hiding a screen sets
+   display:none, and re-showing it replays its animations from scratch no
+   matter what the class list says. The entrance is a fade on the whole
+   screen, so it dragged the sticky header and tab bar through opacity 0 on
+   every tab switch and read as a flash. This silences the screen and its
+   body children, so only the first visit to a screen animates.
+
+   .anim-screen.is-settled is specificity 0,2,0 and the child selector 0,3,0,
+   which both beat the 0,1,0 rules above, including inside the media query
+   below, since a media query adds no specificity of its own. */
+.anim-screen.is-settled,
+.anim-screen.is-settled .anim-screen-body > * {
+  animation: none;
+}
+
+.hover-lift {
+  transition:
+    transform 180ms cubic-bezier(0.22, 0.61, 0.36, 1),
+    box-shadow 180ms ease-out,
+    border-color 180ms ease-out;
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-raised);
+}
+.hover-lift:active {
+  transform: translateY(0);
+}
+
+.press {
+  transition:
+    transform 120ms ease-out,
+    background-color 160ms ease-out;
+}
+.press:active {
+  transform: scale(0.985);
+}
+
+.nav-item {
+  transition:
+    background-color 160ms ease-out,
+    color 160ms ease-out,
+    transform 160ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.nav-item:active {
+  transform: scale(0.98);
+}
+
+.mode-fade {
+  transition:
+    background-color 260ms ease-out,
+    color 260ms ease-out;
+}
+
+.drawer-panel {
+  transition: transform 280ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.drawer-scrim {
+  transition: opacity 240ms ease-out;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* .anim-screen deliberately keeps the opacity-only fade here. The staggered
+     entrance lives on the body children instead, and draw-in translates
+     upward, so it cannot grow the page. */
+  .anim-screen-body > * {
+    animation: draw-in 220ms ease-out both;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .anim-screen,
+  .anim-screen-body > *,
+  .hover-lift,
+  .press,
+  .nav-item,
+  .mode-fade,
+  .drawer-panel,
+  .drawer-scrim {
+    animation: none !important;
+    transition: none !important;
+  }
+  .hover-lift:hover {
+    transform: none;
+  }
+}
+
+@layer utilities {
+  .no-number-spinner::-webkit-outer-spin-button,
+  .no-number-spinner::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  .no-number-spinner {
+    -moz-appearance: textfield;
+    appearance: textfield;
   }
 }
