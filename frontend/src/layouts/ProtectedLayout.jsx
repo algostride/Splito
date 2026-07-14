@@ -1,31 +1,21 @@
-import { Outlet, Navigate } from 'react-router-dom';
-import { useSelector, useDispatch } from 'react-redux';
-import { logoutAndReset } from '../store';
+import { Navigate, useLocation } from 'react-router-dom';
+import { useSelector } from 'react-redux';
+import AppShell from '../components/shell/AppShell';
 
+/**
+ * Auth gate plus the app chrome. The `state.from` carry is load-bearing: an
+ * `/accept-invite/<token>` link opened while logged out has to survive the
+ * trip through /login, otherwise the token is lost.
+ */
 const ProtectedLayout = () => {
-    const token = useSelector((state) => state.auth.token);
-    const dispatch = useDispatch();
+  const token = useSelector((state) => state.auth.token);
+  const location = useLocation();
 
-    if (!token) {
-        return <Navigate to="/login" replace />;
-    }
+  if (!token) {
+    return <Navigate to="/login" replace state={{ from: location }} />;
+  }
 
-    return (
-        <div className="min-h-screen flex flex-col">
-            <nav className="bg-blue-600 text-white p-4 flex justify-between">
-                <h1 className="text-xl font-bold">Splito</h1>
-                <button
-                    onClick={() => dispatch(logoutAndReset())}
-                    className="bg-blue-500 px-4 py-2 rounded hover:bg-blue-700"
-                >
-                    Logout
-                </button>
-            </nav>
-            <main className="flex-1 p-4">
-                <Outlet />
-            </main>
-        </div>
-    );
+  return <AppShell />;
 };
 
 export default ProtectedLayout;

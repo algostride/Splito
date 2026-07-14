@@ -10,6 +10,17 @@
          copy, Outfit for display headings, JetBrains Mono for amounts. The
          weights asked for are the ones the type scale actually uses. -->
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- data-mode is set before first paint by the inline script in
+         src/main.jsx, so a dark-mode user never sees a white flash. -->
+    <script>
+      try {
+        var stored = localStorage.getItem('splito-theme');
+        document.documentElement.dataset.mode =
+          stored || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      } catch (e) {
+        document.documentElement.dataset.mode = 'light';
+      }
+    </script>
     <title>Splito - Splitwise Alternative</title>
   </head>
   <body>
