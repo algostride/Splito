@@ -1,6 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
+import { Check, X } from 'lucide-react';
 import { useAcceptInviteMutation } from '../store/groupsApi';
+import Screen from '../components/shell/Screen';
+import Card from '../components/ui/Card';
+import EmptyState from '../components/ui/EmptyState';
+import { LoadingBlock } from '../components/ui/Spinner';
+import { buttonClass } from '../components/ui/styles';
 
 const AcceptInvite = () => {
     const { token } = useParams();
@@ -9,14 +15,29 @@ const AcceptInvite = () => {
     const [status, setStatus] = useState('loading'); // loading, success, error
     const [message, setMessage] = useState('Verifying your invite link...');
 
+    /* A tokenless URL is handled here rather than by setting state in the
+       effect, for two reasons. React's set-state-in-effect rule objects to the
+       synchronous call, and it is genuinely a different condition rather than an
+       outcome: nothing was attempted, so there is no async result to store. It
+       is also correct when the token appears or disappears while mounted, which
+       *useParams can do without a remount -- a state initialiser would miss
+       that. Previously this left `status` at 'loading' forever, so the page was
+       a spinner that never resolved and never explained itself. */
+    const missingToken = !token;
+
     useEffect(() => {
+        // The delayed redirect has to be cancellable. Left running, a logout
+        // or a manual click inside those 2.5s got undone by navigate('/')
+        // firing afterwards and throwing the user back out of the app.
+        let redirectTimer = null;
+
         const processInvite = async () => {
             try {
                 await acceptInvite(token).unwrap();
                 setStatus('success');
                 setMessage('Successfully joined the group!');
                 // Pause briefly so the user sees the success message
-                setTimeout(() => {
+                redirectTimer = setTimeout(() => {
                     navigate('/');
                 }, 2500);
             } catch (err) {
@@ -25,48 +46,71 @@ const AcceptInvite = () => {
             }
         };
 
-        if (token) {
-            processInvite();
-        }
+        if (!token) return undefined;
+
+        processInvite();
+
+        return () => {
+            if (redirectTimer) clearTimeout(redirectTimer);
+        };
     }, [token, acceptInvite, navigate]);
 
     return (
-        <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
-            <div className="max-w-md w-full bg-white shadow-xl rounded-2xl p-8 text-center border border-gray-100">
+        // This route lives under ProtectedLayout, so it renders inside the app
+        // shell. It used to carry its own `min-h-screen`, which made it taller
+        // than the viewport and pushed a scrollbar onto a single status card.
+        // The vertical padding is on a wrapper rather than passed to Screen,
+        // whose own padding would have raced it in the stylesheet.
+        <Screen>
+            <div className="py-12">
+                <Card pad="gutter" className="max-w-md mx-auto">
+                    {missingToken && (
+                        <EmptyState
+                            tone="neg"
+                            icon={<X size={28} strokeWidth={2.5} aria-hidden="true" />}
+                            title="Invite Link Incomplete"
+                            action={
+                                <Link to="/" className={buttonClass({ className: 'mt-2' })}>
+                                    Go to Dashboard
+                                </Link>
+                            }
+                        >
+                            This link is missing its invite token. Ask whoever invited you to send
+                            it again.
+                        </EmptyState>
+                    )}
 
-                {status === 'loading' && (
-                    <div className="flex flex-col items-center space-y-6">
-                        <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                        <h2 className="text-xl font-semibold text-gray-800">Joining Group...</h2>
-                        <p className="text-gray-500 font-medium">{message}</p>
-                    </div>
-                )}
+                    {!missingToken && status === 'loading' && (
+                        <LoadingBlock text={message} size="lg" />
+                    )}
 
-                {status === 'success' && (
-                    <div className="flex flex-col items-center space-y-6 animate-fade-in-up">
-                        <div className="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center shadow-inner">
-                            <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7"></path></svg>
-                        </div>
-                        <h2 className="text-3xl font-extrabold text-gray-900">You're In!</h2>
-                        <p className="text-lg text-green-600 font-medium">{message}</p>
-                        <p className="text-sm text-gray-400">Taking you to your dashboard...</p>
-                    </div>
-                )}
+                    {!missingToken && status === 'success' && (
+                        <EmptyState
+                            tone="pos"
+                            icon={<Check size={28} strokeWidth={2.5} aria-hidden="true" />}
+                            title="You're In!"
+                        >
+                            {message} Taking you to your dashboard...
+                        </EmptyState>
+                    )}
 
-                {status === 'error' && (
-                    <div className="flex flex-col items-center space-y-6">
-                        <div className="w-20 h-20 bg-red-100 text-red-600 rounded-full flex items-center justify-center shadow-inner">
-                            <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
-                        </div>
-                        <h2 className="text-3xl font-extrabold text-gray-900">Join Failed</h2>
-                        <p className="text-red-500 font-medium">{message}</p>
-                        <Link to="/" className="mt-6 w-full inline-flex justify-center items-center px-4 py-3 border border-transparent text-sm font-medium rounded-lg shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all">
-                            Go to Dashboard
-                        </Link>
-                    </div>
-                )}
+                    {!missingToken && status === 'error' && (
+                        <EmptyState
+                            tone="neg"
+                            icon={<X size={28} strokeWidth={2.5} aria-hidden="true" />}
+                            title="Join Failed"
+                            action={
+                                <Link to="/" className={buttonClass({ className: 'mt-2' })}>
+                                    Go to Dashboard
+                                </Link>
+                            }
+                        >
+                            {message}
+                        </EmptyState>
+                    )}
+                </Card>
             </div>
-        </div>
+        </Screen>
     );
 };
 
