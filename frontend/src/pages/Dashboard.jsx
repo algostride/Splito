@@ -1,130 +1,201 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState } from 'react';
+import { useDispatch } from 'react-redux';
 import { Link } from 'react-router-dom';
-import { useGetGroupsQuery, useCreateGroupMutation } from '../store/groupsApi';
 import { Plus, Users, LayoutDashboard } from 'lucide-react';
+import { useGetGroupsQuery, useCreateGroupMutation } from '../store/groupsApi';
+import { describeError } from '../utils/errorMessage';
+import { balanceMeaning, netTone, rupees, signedRupees } from '../utils/money';
+import Screen from '../components/shell/Screen';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import Modal from '../components/ui/Modal';
+import EmptyState, { Note } from '../components/ui/EmptyState';
+import { Field } from '../components/ui/Input';
+import { LoadingBlock } from '../components/ui/Spinner';
+import { notify } from '../store/toastSlice';
+
+/**
+ * One card per group, in a responsive grid.
+ *
+ * This replaces a four-column table that had a separate card list below `md`,
+ * so the same data was rendered twice in two shapes and the table's roles
+ * (`table`/`row`/`columnheader`) meant a grid migration could never be a
+ * superset of the old markup. One component now covers every width.
+ *
+ * Columns are sized off the real content width rather than guessed. `Screen`
+ * gives `p-gutter` (32px a side) inside `max-w-[1360px]`, and the rail is 68px
+ * at `md` and 248px from `lg`, so a card is:
+ *
+ *   768  md   636 content  2-up 306   3-up 196
+ *   1024 lg   712 content  2-up 344   3-up 221
+ *   1280 xl   968 content  2-up 472   3-up 307
+ *   1440      1128 content 3-up 360
+ *   1536+     1360 content 3-up 437   (Screen caps the column)
+ *
+ * Three-up only clears a readable card at `xl`, where 307px leaves 259px of
+ * text after `p-card`. Four-up is never viable: at 1440 it would leave 216px,
+ * which breaks a long group name across three lines and cannot hold a signed
+ * money figure beside its label. So one column on a phone, two from `md`, three
+ * from `xl`.
+ *
+ * The name is clamped to two lines rather than truncated. The table's
+ * `truncate` cut a long name with no ellipsis room to judge it by, and the
+ * seeded 90-character group exists to make sure wrapping is visible.
+ */
+const GroupGrid = ({ groups }) => (
+    <ul aria-label="Groups" className="grid gap-card md:grid-cols-2 xl:grid-cols-3">
+        {groups.map((group) => (
+            <li key={group.id} className="min-w-0">
+                <Card pad="card" lift className="h-full">
+                    <Link
+                        to={`/groups/${group.id}`}
+                        className="flex h-full flex-col gap-4 press"
+                    >
+                        <div className="flex items-start gap-3">
+                            <span
+                                className="w-avatar-lg h-avatar-lg rounded-control bg-accent-soft text-accent flex items-center justify-center shrink-0"
+                                aria-hidden="true"
+                            >
+                                <Users size={20} strokeWidth={1.75} />
+                            </span>
+                            <span className="min-w-0 flex-1">
+                                <span className="block text-body font-semibold text-text line-clamp-2 break-words">
+                                    {group.name}
+                                </span>
+                                <span className="block text-meta text-faint mt-0.5">
+                                    {group.member_count} member
+                                    {group.member_count === 1 ? '' : 's'}
+                                </span>
+                            </span>
+                        </div>
+
+                        {/* Figures sit on their own row so the two money columns
+                            align across every card in the grid. The previous
+                            table got that from table cells; a grid has to ask
+                            for it, and `tnum` keeps the digits the same width. */}
+                        <div className="mt-auto flex items-end justify-between gap-3 border-t border-border pt-3">
+                            <span className="min-w-0">
+                                <span
+                                    className={`block font-money tnum text-body font-semibold ${netTone(group.your_net)}`}
+                                    title={balanceMeaning(group.your_net)}
+                                >
+                                    {signedRupees(group.your_net)}
+                                </span>
+                                <span className="block text-meta text-faint truncate">
+                                    {balanceMeaning(group.your_net)}
+                                </span>
+                            </span>
+                            <span className="shrink-0 text-right">
+                                <span className="block font-money tnum text-body text-muted">
+                                    {rupees(group.total_spend)}
+                                </span>
+                                <span className="block text-meta text-faint">group spend</span>
+                            </span>
+                        </div>
+                    </Link>
+                </Card>
+            </li>
+        ))}
+    </ul>
+);
+
 
 const Dashboard = () => {
     const { data: groups, isLoading, error } = useGetGroupsQuery();
+    const dispatch = useDispatch();
     const [createGroup, { isLoading: isCreating }] = useCreateGroupMutation();
     const [newGroupName, setNewGroupName] = useState('');
     const [showModal, setShowModal] = useState(false);
-    const modalRef = useRef(null);
+    const [createError, setCreateError] = useState(null);
 
-    useEffect(() => {
-        if (!showModal) return;
-        const handleClickOutside = (e) => {
-            if (modalRef.current && !modalRef.current.contains(e.target)) {
-                setShowModal(false);
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [showModal]);
+    const closeModal = () => {
+        setShowModal(false);
+        setCreateError(null);
+    };
 
     const handleCreateGroup = async (e) => {
         e.preventDefault();
         try {
             if (!newGroupName.trim()) return;
+            setCreateError(null);
             await createGroup({ name: newGroupName }).unwrap();
+            // The modal closing was the only signal that anything happened, and
+            // a new group appearing in the list is easy to miss.
+            dispatch(notify(`Created "${newGroupName.trim()}"`));
             setNewGroupName('');
-            setShowModal(false);
+            closeModal();
         } catch (err) {
             console.error('Failed to create group', err);
+            setCreateError(describeError(err));
         }
     };
 
     return (
-        <div className="max-w-4xl mx-auto py-8 animate-fade-in-up">
-            <div className="flex justify-between items-center mb-8">
-                <div className="flex items-center space-x-3 text-blue-900">
-                    <LayoutDashboard size={32} />
-                    <h2 className="text-3xl font-extrabold tracking-tight">Your Groups</h2>
+        <Screen>
+            <div className="flex flex-wrap justify-between items-center gap-4">
+                <div className="flex items-center gap-3">
+                    <LayoutDashboard size={26} className="text-accent" aria-hidden="true" />
+                    <h1 className="text-title lg:text-display font-display font-semibold text-text">
+                        Your groups
+                    </h1>
                 </div>
-                <button
-                    onClick={() => setShowModal(true)}
-                    className="bg-blue-600 text-white px-6 py-2.5 rounded-xl shadow-lg hover:bg-blue-700 hover:shadow-xl transition-all flex items-center space-x-2 font-semibold"
-                >
-                    <Plus size={20} />
-                    <span>Create Group</span>
-                </button>
+                <Button onClick={() => setShowModal(true)}>
+                    <Plus size={18} strokeWidth={2} aria-hidden="true" />
+                    Create group
+                </Button>
             </div>
 
-            {isLoading && (
-                <div className="flex flex-col items-center justify-center py-20 space-y-4">
-                    <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                    <p className="text-gray-500 font-medium italic">Loading your amazing groups...</p>
-                </div>
-            )}
+            {isLoading && <LoadingBlock text="Loading your groups..." />}
 
-            {error && (
-                <div className="bg-red-50 p-6 rounded-xl border border-red-200 text-center">
-                    <p className="text-red-500 font-semibold">Oops! Failed to load groups. Please try refreshing.</p>
-                </div>
-            )}
+            {error && <Note tone="neg">{describeError(error)}</Note>}
 
             {!isLoading && !error && groups?.length === 0 && (
-                <div className="bg-white p-12 rounded-2xl shadow-sm border border-gray-100 text-center space-y-4">
-                    <div className="w-20 h-20 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-6">
-                        <Plus size={40} />
-                    </div>
-                    <h3 className="text-xl font-bold text-gray-800">No groups yet</h3>
-                    <p className="text-gray-500 max-w-xs mx-auto">Create a group to start splitting bills with your friends!</p>
-                </div>
+                <Card>
+                    <EmptyState
+                        icon={<Plus size={24} strokeWidth={2} aria-hidden="true" />}
+                        title="No groups yet"
+                        action={
+                            <Button onClick={() => setShowModal(true)} className="mt-2">
+                                <Plus size={18} strokeWidth={2} aria-hidden="true" />
+                                Create your first group
+                            </Button>
+                        }
+                    >
+                        Create a group to start splitting bills with your flatmates.
+                    </EmptyState>
+                </Card>
             )}
 
             {groups?.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {groups.map((group) => (
-                        <Link key={group.id} to={`/groups/${group.id}`} className="block group hover:-translate-y-1 transition-all duration-300 bg-white rounded-2xl shadow-sm hover:shadow-xl border border-gray-100 overflow-hidden">
-                            <div className="p-6">
-                                <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center mb-4 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                                    <Users size={24} />
-                                </div>
-                                <h3 className="text-xl font-bold text-gray-900 mb-2 truncate">{group.name}</h3>
-                                <p className="text-sm text-gray-500 flex items-center">
-                                    <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-                                    Active Group
-                                </p>
-                            </div>
-                        </Link>
-                    ))}
-                </div>
+                <GroupGrid groups={groups} />
             )}
 
-            {showModal && (
-                <div className="fixed inset-0 flex items-center justify-center p-4 z-50">
-                    <div ref={modalRef} className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md border border-gray-100 animate-fade-in-up">
-                        <h3 className="text-2xl font-bold mb-4">Create New Group</h3>
-                        <form onSubmit={handleCreateGroup}>
-                            <input
-                                type="text"
-                                value={newGroupName}
-                                onChange={(e) => setNewGroupName(e.target.value)}
-                                placeholder="Group Name"
-                                className="w-full border rounded-lg p-3 mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                required
-                            />
-                            <div className="flex justify-end space-x-3">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowModal(false)}
-                                    className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={isCreating}
-                                    className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
-                                >
-                                    {isCreating ? 'Creating...' : 'Create'}
-                                </button>
-                            </div>
-                        </form>
+            <Modal
+                open={showModal}
+                onClose={closeModal}
+                title="New group"
+                labelledBy="create-group-title"
+            >
+                <form onSubmit={handleCreateGroup} className="flex flex-col gap-4">
+                    <Field
+                        label="Group name"
+                        placeholder="Flat 302, Indiranagar"
+                        value={newGroupName}
+                        onChange={(e) => setNewGroupName(e.target.value)}
+                        error={createError}
+                        required
+                    />
+                    <div className="flex justify-end gap-2">
+                        <Button variant="ghost" onClick={closeModal}>
+                            Cancel
+                        </Button>
+                        <Button type="submit" disabled={isCreating}>
+                            {isCreating ? 'Creating...' : 'Create group'}
+                        </Button>
                     </div>
-                </div>
-            )}
-        </div>
+                </form>
+            </Modal>
+        </Screen>
     );
 };
 
