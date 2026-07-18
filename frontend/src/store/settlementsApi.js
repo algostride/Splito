@@ -2,10 +2,6 @@ import { api } from './api';
 
 export const settlementsApi = api.injectEndpoints({
     endpoints: (builder) => ({
-        getBalances: builder.query({
-            query: (groupId) => `settlements/balances/?group=${groupId}`,
-            providesTags: ['Settlement'],
-        }),
         getUserDebts: builder.query({
             query: (groupId) => `settlements/debts/?group=${groupId}`,
             providesTags: ['Settlement'],
@@ -28,12 +24,28 @@ export const settlementsApi = api.injectEndpoints({
                 method: 'DELETE',
             }),
             invalidatesTags: ['Settlement'],
+            // Same reasoning as deleteBill: removing a row from a list needs no
+            // server arithmetic, so the optimistic version cannot be wrong.
+            // Settlements *created* are not optimistic, because that changes
+            // the pairwise balance matrix.
+            async onQueryStarted(id, { dispatch, queryFulfilled }) {
+                // Same shape as deleteBill: the entry is the array itself.
+                const patches = dispatch(
+                    api.util.updateQueryData('getSettlements', (draft) =>
+                        Array.isArray(draft) ? draft.filter((s) => s.id !== id) : draft,
+                    ),
+                );
+                try {
+                    await queryFulfilled;
+                } catch {
+                    dispatch(api.util.patchQueryData('getSettlements', patches));
+                }
+            },
         }),
     }),
 });
 
 export const {
-    useGetBalancesQuery,
     useGetUserDebtsQuery,
     useGetSettlementsQuery,
     useCreateSettlementMutation,
