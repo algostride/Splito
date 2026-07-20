@@ -1,11 +1,17 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useSelector } from 'react-redux';
-import { Save, Tag, Trash2, Edit3, Check, X } from 'lucide-react';
-import { createEmptyItem, computeAssignments, getItemSummary, getOverviewTotals } from './billUtils';
+import { Save, Tag, Trash2, Edit3, Check, Plus, X } from 'lucide-react';
+import { createEmptyItem, computeAssignments, getItemSummary, getOverviewTotals, hydrateItem, evenPercents } from './billUtils';
 import SplitControls from './SplitControls';
 import MemberSplitGrid from './MemberSplitGrid';
 import ValidationBadge from './ValidationBadge';
 import ItemSidebar from './ItemSidebar';
+import Spinner from '../ui/Spinner';
+import { UnderlineTabs } from '../ui/Tabs';
+import Card from '../ui/Card';
+import Button from '../ui/Button';
+import IconButton from '../ui/IconButton';
+import Input, { Field, Select } from '../ui/Input';
 
 const TABS = [
     { key: 'overview', label: 'Overview' },
@@ -19,23 +25,13 @@ const buildInitialState = (initialData) => {
             title: initialData.title || '',
             totalAmount: initialData.total_amount || '',
             paidBy: initialData.paid_by || '',
-            items: initialData.items.map(item => {
-                const assignedUserIds = item.assignments?.map(a => a.user_id) || [];
-                return {
-                    name: item.name,
-                    amount: item.amount,
-                    splitMode: 'shares',
-                    selectedMembers: assignedUserIds,
-                    memberShares: Object.fromEntries(assignedUserIds.map(uid => [uid, 1])),
-                    memberPercents: {},
-                };
-            }),
+            items: (initialData.items || []).map(hydrateItem),
         };
     }
     return { title: '', totalAmount: '', paidBy: '', items: [createEmptyItem()] };
 };
 
-const CompoundBillForm = ({ members, onSubmit, isSubmitting, initialData, onCancel }) => {
+const CompoundBillForm = ({ members, onSubmit, isSubmitting, initialData, onCancel, submitLabel = 'Save Bill' }) => {
     const currentUser = useSelector((state) => state.auth.user);
     const initialState = buildInitialState(initialData);
 
@@ -60,12 +56,18 @@ const CompoundBillForm = ({ members, onSubmit, isSubmitting, initialData, onCanc
         setItems(newItems);
         if (selectedItemIndex === index) setSelectedItemIndex(null);
         else if (selectedItemIndex > index) setSelectedItemIndex(selectedItemIndex - 1);
+        // The open editor is index-based too, so leaving it pointed at a
+        // shifted row would write the typed name onto the wrong item.
+        if (editingItemIdx === index) cancelEditItem();
+        else if (editingItemIdx !== null && editingItemIdx > index) setEditingItemIdx(editingItemIdx - 1);
     };
 
-    const handleItemChange = (index, field, value) => {
-        const newItems = structuredClone(items);
-        newItems[index][field] = value;
-        setItems(newItems);
+    const updateItem = (index, patch) => {
+        setItems(prev => {
+            const newItems = structuredClone(prev);
+            Object.assign(newItems[index], patch);
+            return newItems;
+        });
     };
 
     const handleSplitModeToggle = (index, mode) => {
@@ -76,11 +78,7 @@ const CompoundBillForm = ({ members, onSubmit, isSubmitting, initialData, onCanc
                 newItems[index].memberShares[uid] = 1;
             });
         } else {
-            const count = newItems[index].selectedMembers.length || 1;
-            const evenPct = 100 / count;
-            newItems[index].selectedMembers.forEach(uid => {
-                newItems[index].memberPercents[uid] = parseFloat(evenPct.toFixed(2));
-            });
+            newItems[index].memberPercents = evenPercents(newItems[index].selectedMembers);
         }
         setItems(newItems);
     };
@@ -115,10 +113,7 @@ const CompoundBillForm = ({ members, onSubmit, isSubmitting, initialData, onCanc
         if (item.splitMode === 'shares') {
             allIds.forEach(uid => { item.memberShares[uid] = 1; });
         } else {
-            const evenPct = 100 / allIds.length;
-            allIds.forEach(uid => {
-                item.memberPercents[uid] = parseFloat(evenPct.toFixed(2));
-            });
+            item.memberPercents = evenPercents(allIds);
         }
         setItems(newItems);
     };
@@ -146,23 +141,34 @@ const CompoundBillForm = ({ members, onSubmit, isSubmitting, initialData, onCanc
             const newItems = structuredClone(items);
             const allIds = members.map(m => m.user.id);
             newItems[index].selectedMembers = allIds;
-            allIds.forEach(uid => {
-                newItems[index].memberShares[uid] = 1;
-            });
+            // Seed the bucket the item's mode actually reads, otherwise a
+            // percent-mode item shows a full set of blank inputs.
+            if (newItems[index].splitMode === 'shares') {
+                allIds.forEach(uid => {
+                    newItems[index].memberShares[uid] = 1;
+                });
+            } else {
+                newItems[index].memberPercents = evenPercents(allIds);
+            }
             setItems(newItems);
         }
     };
 
     const startEditItem = (idx) => {
         setEditingItemIdx(idx);
-        setEditItemName(items[idx].name);
-        setEditItemAmount(items[idx].amount);
+        setEditItemName(items[idx].name || '');
+        setEditItemAmount(items[idx].amount || '');
     };
 
     const saveEditItem = () => {
         if (editingItemIdx === null) return;
-        handleItemChange(editingItemIdx, 'name', editItemName);
-        handleItemChange(editingItemIdx, 'amount', editItemAmount);
+        updateItem(editingItemIdx, { name: editItemName, amount: editItemAmount });
+        setErrors(prev => {
+            const next = { ...prev };
+            delete next[`item_${editingItemIdx}_name`];
+            delete next[`item_${editingItemIdx}_amount`];
+            return next;
+        });
         setEditingItemIdx(null);
     };
 
@@ -190,9 +196,16 @@ const CompoundBillForm = ({ members, onSubmit, isSubmitting, initialData, onCanc
         items.forEach((item, idx) => {
             if (!item.name?.trim()) newErrors[`item_${idx}_name`] = 'Name required';
             if (!item.amount || parseFloat(item.amount) <= 0) newErrors[`item_${idx}_amount`] = 'Amount required';
-            const summary = getItemSummary(item);
-            if (summary && !summary.valid) {
-                newErrors[`item_${idx}_split`] = 'Split does not match item amount';
+            else if (item.selectedMembers.length === 0) {
+                // A brand new item has nobody assigned, and the split summary is
+                // null in that case, so without this the request went out with
+                // empty assignments and came back as a 400 from the server.
+                newErrors[`item_${idx}_split`] = 'Assign at least one member';
+            } else {
+                const summary = getItemSummary(item);
+                if (summary && !summary.valid) {
+                    newErrors[`item_${idx}_split`] = 'Split does not match item amount';
+                }
             }
         });
 
@@ -205,9 +218,11 @@ const CompoundBillForm = ({ members, onSubmit, isSubmitting, initialData, onCanc
             title,
             total_amount: totalAmount,
             paid_by: paidBy || currentUser?.id,
+            bill_type: 'compound',
             items: items.map(item => ({
                 name: item.name,
                 amount: String(item.amount),
+                split_mode: item.splitMode,
                 assignments: computeAssignments(item)
             }))
         };
@@ -220,121 +235,106 @@ const CompoundBillForm = ({ members, onSubmit, isSubmitting, initialData, onCanc
     const itemsMatch = Math.abs(itemsTotal - total) < 0.01;
 
     return (
-        <form onSubmit={handleSubmit} className="space-y-0">
-            {/* Tab Bar */}
-            <div className="flex space-x-8 border-b border-gray-100 mb-6">
-                {TABS.map(tab => (
-                    <button
-                        key={tab.key}
-                        type="button"
-                        onClick={() => setActiveTab(tab.key)}
-                        className={`pb-3 text-sm font-bold border-b-2 transition-all ${
-                            activeTab === tab.key
-                                ? 'text-blue-600 border-blue-600'
-                                : 'text-gray-400 border-transparent hover:text-gray-600'
-                        }`}
-                    >
-                        {tab.label}
-                    </button>
-                ))}
-            </div>
+        <form onSubmit={handleSubmit}>
+            {/* Overview / Items / Splits is component state, not a route, so
+                it uses the presentational half of the tab bar. */}
+            <UnderlineTabs
+                tabs={TABS}
+                active={activeTab}
+                onChange={setActiveTab}
+                height="h-13"
+                className="border-b border-border mb-5"
+            />
 
             {/* Tab 1: Overview */}
             {activeTab === 'overview' && (
-                <div className="space-y-5">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Title</label>
-                            <div className="relative">
-                                <Tag className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" size={14} />
-                                <input
-                                    type="text"
-                                    required
-                                    value={title}
-                                    onChange={(e) => setTitle(e.target.value)}
-                                    className={`w-full bg-gray-50 border rounded-lg pl-9 pr-3 py-2.5 text-sm font-bold focus:ring-2 focus:ring-blue-500 transition-all outline-none ${
-                                        errors.title ? 'border-red-300' : 'border-gray-200'
-                                    }`}
-                                    placeholder="e.g. Team Dinner"
-                                />
-                            </div>
-                            {errors.title && <p className="text-xs text-red-500 font-bold">{errors.title}</p>}
-                        </div>
+                <div className="space-y-gap">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-card">
+                        <Field
+                            label="Title"
+                            hint="What was this for?"
+                            error={errors.title}
+                            leading={<Tag size={14} strokeWidth={2} />}
+                            type="text"
+                            required
+                            value={title}
+                            onChange={(e) => setTitle(e.target.value)}
+                            placeholder="Team dinner"
+                        />
 
-                        <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Amount</label>
-                            <div className="relative">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 text-sm font-bold">₹</span>
-                                <input
-                                    type="number"
-                                    step="0.01"
-                                    required
-                                    value={totalAmount}
-                                    onChange={(e) => setTotalAmount(e.target.value)}
-                                    className={`w-full bg-gray-50 border rounded-lg pl-7 pr-3 py-2.5 text-sm font-bold focus:ring-2 focus:ring-blue-500 transition-all outline-none ${
-                                        errors.totalAmount ? 'border-red-300' : 'border-gray-200'
-                                    }`}
-                                    placeholder="0.00"
-                                />
-                            </div>
-                            {errors.totalAmount && <p className="text-xs text-red-500 font-bold">{errors.totalAmount}</p>}
-                        </div>
+                        <Field
+                            label="Amount"
+                            error={errors.totalAmount}
+                            leading={<span className="text-body font-semibold">&#8377;</span>}
+                            inset="money"
+                            type="number"
+                            step="0.01"
+                            className="font-money tnum"
+                            required
+                            value={totalAmount}
+                            onChange={(e) => setTotalAmount(e.target.value)}
+                            placeholder="0.00"
+                        />
 
-                        <div className="space-y-1">
-                            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Paid by</label>
-                            <select
-                                required
-                                value={paidBy}
-                                onChange={(e) => setPaidBy(e.target.value)}
-                                className={`w-full bg-gray-50 border rounded-lg px-3 py-2.5 text-sm font-bold focus:ring-2 focus:ring-blue-500 transition-all outline-none ${
-                                    errors.paidBy ? 'border-red-300' : 'border-gray-200'
-                                }`}
-                            >
-                                <option value="" disabled>Select member...</option>
-                                {members?.map(m => (
-                                    <option key={m.user.id} value={m.user.id}>{m.user.name || m.user.email}</option>
-                                ))}
-                            </select>
-                            {errors.paidBy && <p className="text-xs text-red-500 font-bold">{errors.paidBy}</p>}
-                        </div>
+                        <Field
+                            as={Select}
+                            label="Paid by"
+                            error={errors.paidBy}
+                            required
+                            value={paidBy}
+                            onChange={(e) => setPaidBy(e.target.value)}
+                        >
+                            <option value="" disabled>
+                                Select member
+                            </option>
+                            {members?.map((m) => (
+                                <option key={m.user.id} value={m.user.id}>
+                                    {m.user.name || m.user.email}
+                                </option>
+                            ))}
+                        </Field>
                     </div>
 
                     {/* Overview Summary */}
-                    <div className="bg-gray-50 rounded-xl p-5 space-y-3">
-                        <div className="flex justify-between text-sm">
-                            <span className="text-gray-400 font-bold">Items</span>
-                            <span className="font-black text-gray-900">{items.length}</span>
+                    <Card pad="card" className="bg-surface-2">
+                        <div className="flex justify-between text-body">
+                            <span className="text-faint font-semibold">Items</span>
+                            <span className="font-semibold text-text tnum">{items.length}</span>
                         </div>
-                        <div className="flex justify-between text-sm">
-                            <span className="text-gray-400 font-bold">Item Total</span>
-                            <span className={`font-black ${itemsMatch ? 'text-green-600' : 'text-amber-600'}`}>
+                        <div className="flex justify-between text-body">
+                            <span className="text-faint font-semibold">Item total</span>
+                            <span className={`font-money tnum font-semibold ${itemsMatch ? 'text-pos' : 'text-warn'}`}>
                                 ₹{itemsTotal.toFixed(2)}
                             </span>
                         </div>
-                        <div className="flex justify-between text-sm">
-                            <span className="text-gray-400 font-bold">Bill Total</span>
-                            <span className="font-black text-blue-600">₹{total.toFixed(2)}</span>
+                        <div className="flex justify-between text-body">
+                            <span className="text-faint font-semibold">Bill total</span>
+                            <span className="font-money tnum font-semibold text-accent">
+                                ₹{total.toFixed(2)}
+                            </span>
                         </div>
                         {errors.itemsMismatch && (
-                            <p className="text-xs text-red-500 font-bold">{errors.itemsMismatch}</p>
+                            <p className="text-meta text-neg font-semibold">{errors.itemsMismatch}</p>
                         )}
 
                         {/* Per-person overview */}
                         {Object.keys(overviewTotals).length > 0 && (
-                            <div className="border-t border-gray-200 pt-3 mt-3">
-                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Per Person Totals</p>
-                                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                            <div className="border-t border-border pt-3 mt-3">
+                                <p className="text-meta text-faint uppercase tracking-wider mb-2">
+                                    Per person totals
+                                </p>
+                                <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-2">
                                     {Object.entries(overviewTotals).map(([uid, data]) => {
                                         const member = members?.find(m => m.user.id === uid);
                                         return (
-                                            <div key={uid} className="bg-white rounded-lg px-3 py-2 border border-gray-100">
-                                                <div className="text-xs font-bold text-gray-700 truncate">
+                                            <div key={uid} className="bg-surface rounded-control px-3 py-2 border border-border">
+                                                <div className="text-meta text-muted truncate">
                                                     {member?.user.name || member?.user.email.split('@')[0] || 'Unknown'}
                                                 </div>
-                                                <div className="text-sm font-black text-blue-600">
+                                                <div className="text-body font-money tnum font-semibold text-accent">
                                                     ₹{data.amount.toFixed(2)}
                                                 </div>
-                                                <div className="text-[10px] text-gray-400 font-bold">
+                                                <div className="text-meta text-faint">
                                                     {data.itemCount} {data.itemCount === 1 ? 'item' : 'items'}
                                                 </div>
                                             </div>
@@ -343,13 +343,13 @@ const CompoundBillForm = ({ members, onSubmit, isSubmitting, initialData, onCanc
                                 </div>
                             </div>
                         )}
-                    </div>
+                    </Card>
                 </div>
             )}
 
             {/* Tab 2: Items */}
             {activeTab === 'items' && (
-                <div className="space-y-3">
+                <div className="space-y-2">
                     {items.map((item, idx) => {
                         const isEditing = editingItemIdx === idx;
                         const assigneeCount = item.selectedMembers.length;
@@ -357,96 +357,110 @@ const CompoundBillForm = ({ members, onSubmit, isSubmitting, initialData, onCanc
                         return (
                             <div
                                 key={idx}
-                                className={`rounded-xl overflow-hidden transition-all ${
-                                    isEditing ? 'border-2 border-blue-400 bg-blue-50' : 'border border-gray-200 bg-white hover:border-gray-300'
+                                className={`rounded-card overflow-hidden transition-colors ${
+                                    isEditing ? 'border-2 border-accent/50 bg-accent-soft' : 'border border-border bg-surface hover:border-border-2'
                                 }`}
                             >
-                                <div className="px-5 py-4 flex items-center justify-between">
+                                <div className="px-card py-3 flex items-center justify-between">
                                     <div className="flex items-center space-x-3">
-                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                                            isEditing ? 'bg-blue-600 text-white' : 'bg-gray-200 text-gray-500'
+                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-meta font-semibold ${
+                                            isEditing ? 'bg-accent text-on-accent' : 'bg-surface-3 text-muted'
                                         }`}>
                                             {idx + 1}
                                         </div>
                                         {isEditing ? (
                                             <div className="flex items-center space-x-2">
-                                                <input
+                                                <Input
+                                                    size="sm"
                                                     type="text"
+                                                    aria-label="Item name"
                                                     value={editItemName}
                                                     onChange={(e) => setEditItemName(e.target.value)}
-                                                    className="bg-white border border-gray-300 rounded-lg px-3 py-1.5 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') {
+                                                            e.preventDefault();
+                                                            saveEditItem();
+                                                        }
+                                                    }}
                                                     placeholder="Item name"
                                                     autoFocus
                                                 />
                                                 <div className="relative">
-                                                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-300 text-xs font-bold">₹</span>
-                                                    <input
+                                                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-faint text-xs font-bold">₹</span>
+                                                    <Input
+                                                        size="sm"
+                                                        inset="money"
                                                         type="number"
                                                         step="0.01"
+                                                        aria-label="Item amount"
+                                                        className="w-28 font-money tnum"
                                                         value={editItemAmount}
                                                         onChange={(e) => setEditItemAmount(e.target.value)}
-                                                        className="w-24 bg-white border border-gray-300 rounded-lg pl-6 pr-2 py-1.5 text-sm font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter') {
+                                                                e.preventDefault();
+                                                                saveEditItem();
+                                                            }
+                                                        }}
                                                         placeholder="0.00"
                                                     />
                                                 </div>
                                             </div>
                                         ) : (
                                             <div>
-                                                <span className="text-sm font-bold text-gray-900">{item.name || `Item ${idx + 1}`}</span>
-                                                <span className="text-xs font-bold text-gray-400 ml-2">₹{parseFloat(item.amount) || 0}</span>
+                                                <span className="text-sm font-bold text-text">{item.name || `Item ${idx + 1}`}</span>
+                                                <span className="text-xs font-bold text-faint ml-2">₹{(parseFloat(item.amount) || 0).toFixed(2)}</span>
                                             </div>
                                         )}
                                     </div>
                                     <div className="flex items-center space-x-2">
                                         {isEditing ? (
                                             <>
-                                                <button
-                                                    type="button"
-                                                    onClick={saveEditItem}
-                                                    className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                                                >
-                                                    <Check size={16} />
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    onClick={cancelEditItem}
-                                                    className="p-1.5 text-gray-400 hover:bg-gray-100 rounded-lg transition-colors"
-                                                >
-                                                    <X size={16} />
-                                                </button>
+                                                <IconButton tone="settle" label="Save item name" onClick={saveEditItem}>
+                                                    <Check size={16} strokeWidth={2} aria-hidden="true" />
+                                                </IconButton>
+                                                <IconButton label="Cancel editing" onClick={cancelEditItem}>
+                                                    <X size={16} strokeWidth={2} aria-hidden="true" />
+                                                </IconButton>
                                             </>
                                         ) : (
                                             <>
-                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                                                    itemSummary?.valid ? 'text-green-600 bg-green-50' : 'text-amber-600 bg-amber-50'
+                                                <span className={`text-meta font-semibold px-2 py-0.5 rounded-control ${
+                                                    assigneeCount === 0
+                                                        ? 'text-neg bg-neg-soft'
+                                                        : itemSummary?.valid
+                                                            ? 'text-pos bg-pos-soft'
+                                                            : 'text-warn bg-warn-soft'
                                                 }`}>
                                                     {assigneeCount} assigned
                                                 </span>
-                                                <button
-                                                    type="button"
+                                                <IconButton
+                                                    label={`Rename ${item.name || `item ${idx + 1}`}`}
                                                     onClick={() => startEditItem(idx)}
-                                                    className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                                                 >
-                                                    <Edit3 size={14} />
-                                                </button>
+                                                    <Edit3 size={15} strokeWidth={1.75} aria-hidden="true" />
+                                                </IconButton>
                                                 {items.length > 1 && (
-                                                    <button
-                                                        type="button"
+                                                    <IconButton
+                                                        tone="danger"
+                                                        label={`Remove ${item.name || `item ${idx + 1}`}`}
                                                         onClick={() => handleRemoveItem(idx)}
-                                                        className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
                                                     >
-                                                        <Trash2 size={14} />
-                                                    </button>
+                                                        <Trash2 size={15} strokeWidth={1.75} aria-hidden="true" />
+                                                    </IconButton>
                                                 )}
                                             </>
                                         )}
                                     </div>
                                 </div>
                                 {errors[`item_${idx}_name`] && (
-                                    <p className="px-5 pb-2 text-xs text-red-500 font-bold">{errors[`item_${idx}_name`]}</p>
+                                    <p className="px-card pb-2 text-meta text-neg font-semibold">{errors[`item_${idx}_name`]}</p>
                                 )}
                                 {errors[`item_${idx}_amount`] && (
-                                    <p className="px-5 pb-2 text-xs text-red-500 font-bold">{errors[`item_${idx}_amount`]}</p>
+                                    <p className="px-card pb-2 text-meta text-neg font-semibold">{errors[`item_${idx}_amount`]}</p>
+                                )}
+                                {errors[`item_${idx}_split`] && (
+                                    <p className="px-card pb-2 text-meta text-neg font-semibold">{errors[`item_${idx}_split`]}</p>
                                 )}
                             </div>
                         );
@@ -454,16 +468,17 @@ const CompoundBillForm = ({ members, onSubmit, isSubmitting, initialData, onCanc
                     <button
                         type="button"
                         onClick={handleAddItem}
-                        className="w-full bg-blue-50 text-blue-600 py-3 rounded-xl font-bold text-sm border-2 border-dashed border-blue-200 hover:bg-blue-100 transition-colors"
+                        className="w-full press flex items-center justify-center gap-1 py-3 rounded-card text-body font-semibold bg-accent-soft text-accent border-2 border-dashed border-accent/40 hover:border-accent transition-colors"
                     >
-                        + Add Item
+                        <Plus size={16} strokeWidth={2} aria-hidden="true" />
+                        Add item
                     </button>
                 </div>
             )}
 
-            {/* Tab 3: Splits */}
+            {/* Tab 3: Splits. */}
             {activeTab === 'splits' && (
-                <div className="flex min-h-[400px]">
+                <div className="flex min-h-[420px] rounded-card border border-border overflow-hidden">
                     <ItemSidebar
                         items={items}
                         selectedIndex={selectedItemIndex}
@@ -471,16 +486,16 @@ const CompoundBillForm = ({ members, onSubmit, isSubmitting, initialData, onCanc
                         onAddItem={handleAddItem}
                     />
 
-                    <div className="flex-1 p-6">
+                    <div className="flex-1 p-4 md:p-6">
                         {selectedItemIndex !== null ? (
                             <div className="space-y-4">
                                 <div className="flex items-center justify-between">
                                     <div>
-                                        <h4 className="font-black text-gray-900">
+                                        <h4 className="text-title font-semibold text-text">
                                             {items[selectedItemIndex].name || `Item ${selectedItemIndex + 1}`}
                                         </h4>
-                                        <p className="text-xs text-gray-400 font-bold">
-                                            ₹{parseFloat(items[selectedItemIndex].amount) || 0}
+                                        <p className="text-meta font-money tnum font-semibold text-faint">
+                                            ₹{(parseFloat(items[selectedItemIndex].amount) || 0).toFixed(2)}
                                         </p>
                                     </div>
                                 </div>
@@ -505,16 +520,18 @@ const CompoundBillForm = ({ members, onSubmit, isSubmitting, initialData, onCanc
                                     amount={items[selectedItemIndex].amount}
                                 />
                                 {errors[`item_${selectedItemIndex}_split`] && (
-                                    <p className="text-xs text-red-500 font-bold">{errors[`item_${selectedItemIndex}_split`]}</p>
+                                    <p className="text-meta text-neg font-semibold">{errors[`item_${selectedItemIndex}_split`]}</p>
                                 )}
                             </div>
                         ) : (
                             <div className="flex flex-col items-center justify-center h-full text-center py-12">
-                                <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
-                                    <Edit3 size={24} className="text-gray-300" />
+                                <div className="w-avatar-lg h-avatar-lg bg-surface-2 rounded-card flex items-center justify-center mb-4">
+                                    <Edit3 size={24} strokeWidth={1.75} className="text-faint" aria-hidden="true" />
                                 </div>
-                                <p className="text-gray-400 font-bold text-sm">Select an item from the sidebar</p>
-                                <p className="text-gray-300 text-xs mt-1">to configure how it's split</p>
+                                <p className="text-body font-semibold text-faint">
+                                    Select an item from the sidebar
+                                </p>
+                                <p className="text-meta text-faint mt-1">to configure how it is split</p>
                             </div>
                         )}
                     </div>
@@ -523,39 +540,32 @@ const CompoundBillForm = ({ members, onSubmit, isSubmitting, initialData, onCanc
 
             {/* Error Summary */}
             {errors.itemsMismatch && activeTab !== 'overview' && (
-                <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-600 text-xs font-bold">
+                <div className="mt-4 p-3 bg-neg-soft border border-neg/40 rounded-control text-meta text-neg font-semibold">
                     {errors.itemsMismatch}
                 </div>
             )}
 
             {/* Actions */}
-            <div className="flex items-center justify-between pt-6 border-t border-gray-100 mt-6">
+            <div className="flex items-center justify-between pt-6 border-t border-border mt-6">
                 {onCancel && (
-                    <button
-                        type="button"
-                        onClick={onCancel}
-                        className="text-gray-400 py-2.5 px-4 text-sm font-bold hover:text-gray-600 transition-colors"
-                    >
+                    <Button variant="ghost" onClick={onCancel}>
                         Cancel
-                    </button>
+                    </Button>
                 )}
-                <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="bg-blue-600 text-white py-3 rounded-xl font-bold text-sm shadow-lg shadow-blue-600/20 hover:bg-blue-700 hover:-translate-y-0.5 transition-all disabled:opacity-50 flex items-center justify-center space-x-2 ml-auto"
-                >
+                <Button type="submit" disabled={isSubmitting} className="ml-auto">
                     {isSubmitting ? (
                         <>
-                            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                            {/* One spinner definition, not a copy per form. */}
+                            <Spinner size="xs" tone="onAccent" label="Saving" />
                             <span>Saving...</span>
                         </>
                     ) : (
                         <>
-                            <Save size={16} />
-                            <span>Save Bill</span>
+                            <Save size={16} strokeWidth={2} aria-hidden="true" />
+                            <span>{submitLabel}</span>
                         </>
                     )}
-                </button>
+                </Button>
             </div>
         </form>
     );

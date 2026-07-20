@@ -1,49 +1,64 @@
-import React from 'react';
 import { Plus } from 'lucide-react';
 
 const ItemSidebar = ({ items, selectedIndex, onSelectItem, onAddItem }) => {
-    return (
-        <div className="w-56 flex-shrink-0 bg-gray-50 border-r border-gray-100 p-4 space-y-2 overflow-y-auto">
-            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">
-                Items
-            </p>
-            {items.map((item, idx) => {
-                const isSelected = selectedIndex === idx;
-                const assigneeCount = item.selectedMembers.length;
-                return (
-                    <div
-                        key={idx}
-                        onClick={() => onSelectItem(idx)}
-                        className={`rounded-xl px-4 py-3 cursor-pointer transition-all ${
-                            isSelected
-                                ? 'bg-white border-2 border-blue-400 shadow-sm'
-                                : 'bg-white border border-gray-200 hover:border-gray-300'
-                        }`}
-                    >
-                        <div className="flex items-center justify-between">
-                            <span className={`text-sm font-bold ${isSelected ? 'text-gray-900' : 'text-gray-700'}`}>
-                                {item.name || `Item ${idx + 1}`}
-                            </span>
-                            <span className={`text-xs font-bold ${isSelected ? 'text-blue-600' : 'text-gray-400'}`}>
-                                ₹{parseFloat(item.amount) || 0}
-                            </span>
-                        </div>
-                        <div className="text-[10px] text-gray-400 mt-1 font-bold">
-                            {assigneeCount} assigned
-                        </div>
-                    </div>
-                );
-            })}
-            <button
-                type="button"
-                onClick={onAddItem}
-                className="w-full bg-blue-50 text-blue-600 py-2.5 rounded-xl font-bold text-xs border-2 border-dashed border-blue-200 hover:bg-blue-100 transition-colors flex items-center justify-center space-x-1"
-            >
-                <Plus size={14} />
-                <span>Add Item</span>
-            </button>
-        </div>
-    );
+  // Full width above the split pane on a phone rather than 224px beside it: at
+  // 412px that left the split grid ~124px, and it pins a 112px amount input.
+  // The divider moves with it, and the scroll area is capped so a long item list
+  // cannot push the split editor off the screen.
+  return (
+    <div className="w-full md:w-56 flex-shrink-0 bg-canvas border-b md:border-b-0 md:border-r border-border p-3 space-y-2 overflow-y-auto max-h-44 md:max-h-none">
+      <p className="text-meta text-faint uppercase tracking-wider mb-2">Items</p>
+      {items.map((item, idx) => {
+        const isSelected = selectedIndex === idx;
+        return (
+          <button
+            key={idx}
+            type="button"
+            onClick={() => onSelectItem(idx)}
+            aria-pressed={isSelected}
+            className={[
+              'w-full text-left press rounded-card px-4 py-3 transition-colors',
+              isSelected
+                ? 'bg-surface border-2 border-accent/50'
+                : 'bg-surface border border-border hover:border-border-2',
+            ].join(' ')}
+          >
+            <span className="flex items-center justify-between gap-2">
+              <span
+                className={[
+                  'text-body font-semibold truncate',
+                  isSelected ? 'text-text' : 'text-muted',
+                ].join(' ')}
+              >
+                {item.name || `Item ${idx + 1}`}
+              </span>
+              <span
+                className={[
+                  'font-money tnum text-meta font-semibold shrink-0',
+                  isSelected ? 'text-accent' : 'text-faint',
+                ].join(' ')}
+              >
+                ₹{(parseFloat(item.amount) || 0).toFixed(2)}
+              </span>
+            </span>
+            <span className="block text-meta text-faint mt-1">
+              {item.selectedMembers.length} assigned
+            </span>
+          </button>
+        );
+      })}
+      {/* A dashed outline reads as "create another", which a filled button
+          would not, so this one stays a dashed target rather than a Button. */}
+      <button
+        type="button"
+        onClick={onAddItem}
+        className="w-full press flex items-center justify-center gap-1 py-2.5 rounded-card text-meta font-semibold bg-accent-soft text-accent border-2 border-dashed border-accent/40 hover:border-accent transition-colors"
+      >
+        <Plus size={14} strokeWidth={2} aria-hidden="true" />
+        <span>Add item</span>
+      </button>
+    </div>
+  );
 };
 
 export default ItemSidebar;

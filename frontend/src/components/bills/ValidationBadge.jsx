@@ -1,24 +1,40 @@
-import React from 'react';
-import { Check } from 'lucide-react';
+import { Check, AlertTriangle } from 'lucide-react';
 
 const ValidationBadge = ({ summary, amount }) => {
-    if (!summary) return null;
+  if (!summary) return null;
 
-    const totalAmount = parseFloat(amount) || 0;
-    const computedTotal = summary.perPerson.reduce((s, p) => s + parseFloat(p.amount), 0).toFixed(2);
+  const totalAmount = (parseFloat(amount) || 0).toFixed(2);
+  // Use the allocated total rather than re-summing the per-member figures,
+  // which are already rounded and drifted by paise.
+  const computedTotal = (summary.allocatedTotal ?? 0).toFixed(2);
 
-    return (
-        <div className={`mt-3 flex items-center space-x-2 text-xs font-bold ${
-            summary.valid ? 'text-green-600' : 'text-amber-600'
-        }`}>
-            <Check size={14} />
-            {summary.totalShares !== undefined ? (
-                <span>Total: {summary.totalShares} shares — ₹{computedTotal} of ₹{totalAmount}</span>
-            ) : (
-                <span>Total: {summary.totalPercent.toFixed(1)}% — ₹{computedTotal} of ₹{totalAmount}</span>
-            )}
-        </div>
-    );
+  return (
+    <div
+      className={[
+        'flex items-center gap-2 text-meta font-semibold',
+        summary.valid ? 'text-pos' : 'text-warn',
+      ].join(' ')}
+    >
+      {summary.valid ? (
+        <Check size={14} strokeWidth={2} aria-hidden="true" />
+      ) : (
+        <AlertTriangle size={14} strokeWidth={2} aria-hidden="true" />
+      )}
+      {summary.totalShares !== undefined ? (
+        <span>
+          Total: {summary.totalShares} shares —{' '}
+          <span className="font-money tnum">₹{computedTotal}</span> of{' '}
+          <span className="font-money tnum">₹{totalAmount}</span>
+        </span>
+      ) : (
+        <span>
+          Total: {Number(summary.totalPercent).toFixed(2)}% —{' '}
+          <span className="font-money tnum">₹{computedTotal}</span> of{' '}
+          <span className="font-money tnum">₹{totalAmount}</span>
+        </span>
+      )}
+    </div>
+  );
 };
 
 export default ValidationBadge;
