@@ -11,6 +11,8 @@ import { describeError } from '../utils/errorMessage';
 import Screen from '../components/shell/Screen';
 import Tabs from '../components/ui/Tabs';
 import Button from '../components/ui/Button';
+import Popover from '../components/ui/Popover';
+import BillTypeOptions from '../components/bills/BillTypeOptions';
 import { LoadingBlock } from '../components/ui/Spinner';
 import { Note } from '../components/ui/EmptyState';
 import { asNumber, balanceSentence } from '../utils/money';
@@ -34,6 +36,7 @@ const GroupDetail = () => {
     const navigate = useNavigate();
     const currentUserId = useSelector((state) => state.auth.user?.id);
     const [membersErrorDismissed, setMembersErrorDismissed] = useState(false);
+    const [typePickerOpen, setTypePickerOpen] = useState(false);
 
     const {
         data: group,
@@ -92,15 +95,39 @@ const GroupDetail = () => {
                             {position ? ` · ${position}` : ''}
                         </p>
                     </div>
-                    {/* The form itself stays a page: it is deep-linkable and
-                        the compound one is a three-tab editor. */}
-                    <Button
-                        className="shrink-0"
-                        onClick={() => navigate(`/groups/${id}/add-bill`)}
+                    {/* The type choice is a popover rather than a page. The app
+                        had a modal for this before the tabs were split out;
+                        navigating to the add-bill page just to be asked which
+                        form to use was a regression. The form itself stays a
+                        page, because it is deep-linkable and the compound one
+                        is a three-tab editor. */}
+                    <Popover
+                        open={typePickerOpen}
+                        onClose={() => setTypePickerOpen(false)}
+                        className="w-72"
+                        trigger={
+                            <Button
+                                className="shrink-0"
+                                // Below sm the label is hidden, so without this
+                                // the button is a bare + announcing as nothing.
+                                aria-label="Add bill"
+                                aria-haspopup="menu"
+                                aria-expanded={typePickerOpen}
+                                onClick={() => setTypePickerOpen((open) => !open)}
+                            >
+                                <Plus size={16} strokeWidth={2.4} aria-hidden="true" />
+                                <span className="hidden sm:inline">Add bill</span>
+                            </Button>
+                        }
                     >
-                        <Plus size={16} strokeWidth={2.4} aria-hidden="true" />
-                        <span className="hidden sm:inline">Add bill</span>
-                    </Button>
+                        <BillTypeOptions
+                            compact
+                            onSelect={(type) => {
+                                setTypePickerOpen(false);
+                                navigate(`/groups/${id}/add-bill?type=${type}`);
+                            }}
+                        />
+                    </Popover>
                 </header>
 
                 <div className="border-b border-border bg-surface">

@@ -9,6 +9,7 @@ import CompoundBillForm from '../components/bills/CompoundBillForm';
 import Screen from '../components/shell/Screen';
 import Card from '../components/ui/Card';
 import { Note } from '../components/ui/EmptyState';
+import BillTypeOptions from '../components/bills/BillTypeOptions';
 import { LoadingBlock } from '../components/ui/Spinner';
 
 const AddBill = () => {
@@ -23,11 +24,14 @@ const AddBill = () => {
     const [updateBill, { isLoading: isUpdating }] = useUpdateBillMutation();
 
     const requestedType = searchParams.get('type');
+    const [chosenType, setChosenType] = useState(
+        requestedType === 'simple' || requestedType === 'compound' ? requestedType : null
+    );
     const [submitError, setSubmitError] = useState(null);
 
     // A saved bill keeps the type it was created with. Editing picks the form
     // from the stored value, and there is no way to convert between the two.
-    const billType = isEdit ? (bill?.bill_type || 'compound') : requestedType;
+    const billType = isEdit ? (bill?.bill_type || 'compound') : chosenType;
 
     const handleSubmit = async (payload) => {
         setSubmitError(null);
@@ -48,6 +52,7 @@ const AddBill = () => {
     // One frame for every state. The three separate roots this used to have
     // meant the loading spinner had no page padding while the form did.
     const backTo = isEdit ? `/groups/${groupId}/bills/${billId}` : `/groups/${groupId}`;
+    const showChooser = !isEdit && !billType;
     const formProps = isEdit
         ? { initialData: bill, onCancel: () => navigate(`/groups/${groupId}/bills/${billId}`), submitLabel: 'Save Changes' }
         : {};
@@ -68,18 +73,22 @@ const AddBill = () => {
                 <Note tone="neg">Could not load this bill for editing.</Note>
             ) : (
                 <Card pad="gutter">
-                    <div className="flex items-center gap-3 pb-5 mb-5 border-b border-border">
-                        <div className="w-12 h-12 bg-accent-soft text-accent rounded-control flex items-center justify-center shrink-0">
-                            <Receipt size={22} strokeWidth={1.75} aria-hidden="true" />
+                    {!showChooser && (
+                        <div className="flex items-center gap-3 pb-5 mb-5 border-b border-border">
+                            <div className="w-12 h-12 bg-accent-soft text-accent rounded-control flex items-center justify-center shrink-0">
+                                <Receipt size={22} strokeWidth={1.75} aria-hidden="true" />
+                            </div>
+                            <h1 className="text-title lg:text-display font-display font-semibold text-text">
+                                {isEdit ? 'Edit bill' : 'Add new bill'}
+                            </h1>
                         </div>
-                        <h1 className="text-title lg:text-display font-display font-semibold text-text">
-                            {isEdit ? 'Edit bill' : 'Add new bill'}
-                        </h1>
-                    </div>
+                    )}
 
                     {submitError && <Note tone="neg" className="mb-5">{submitError}</Note>}
 
-                    {billType === 'simple' ? (
+                    {showChooser ? (
+                        <BillTypeOptions onSelect={setChosenType} />
+                    ) : billType === 'simple' ? (
                         <SimpleBillForm
                             members={members}
                             onSubmit={handleSubmit}
