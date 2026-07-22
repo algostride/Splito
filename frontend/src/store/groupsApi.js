@@ -36,7 +36,7 @@ export const groupsApi = api.injectEndpoints({
                 method: 'POST',
             }),
             // Re-fetch groups and members after an invite is accepted
-            invalidatesTags: ['Group', 'Member'],
+            invalidatesTags: ['Group', 'Member', 'Friend'],
         }),
     }),
 });

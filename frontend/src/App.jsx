@@ -33,6 +33,7 @@ const router = createBrowserRouter([
           element: <ProtectedLayout />,
           children: [
             { index: true, element: <Dashboard /> },
+            { path: 'friends', element: <Friends /> },
             // Bill sub-routes are siblings of `groups/:id`, not children, so
             // they render without the group header and tab bar. React Router
             // ranks the fully-matching leaf above the layout, which only
