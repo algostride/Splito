@@ -3,7 +3,7 @@ import { useSelector } from 'react-redux';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useGetBillsQuery, useDeleteBillMutation } from '../../store/billsApi';
 import { describeError } from '../../utils/errorMessage';
-import { groupByMonth, dateStamp } from '../../utils/dates';
+import { groupByMonth, dateStamp, longDate } from '../../utils/dates';
 import { deriveBillStatus, billStatusLabel } from '../../utils/billStatus';
 import { rupees } from '../../utils/money';
 import Screen from '../../components/shell/Screen';
@@ -60,9 +60,9 @@ const BillRow = ({ bill, groupId, currentUserId, open, onToggleMenu, onEdit, onD
     return (
         <li className="flex items-center gap-3 min-h-row border-b border-border last:border-0">
             {/* Day over month, so the eye can pick out a date without reading
-                the month heading above it. The visual parts are hidden from
-                assistive tech; the paid-by line still carries the date in
-                full. */}
+                the month heading above it, and without repeating the date in
+                the paid-by line. The visual parts are hidden from assistive
+                tech and the full date is exposed once, below. */}
             <time dateTime={stamp.iso} className="shrink-0 w-9 text-center leading-tight">
                 <span
                     aria-hidden="true"
@@ -77,29 +77,44 @@ const BillRow = ({ bill, groupId, currentUserId, open, onToggleMenu, onEdit, onD
                     {stamp.month}
                     {stamp.year ? ` ${stamp.year}` : ''}
                 </span>
+                {/* The date is on the stamp now, and those parts are hidden from
+                    assistive tech, so without this there is no date at all for a
+                    screen reader. Exposed once, on the row. */}
+                <span className="sr-only">{longDate(bill.created_at)}</span>
             </time>
 
             <Link
                 to={`/groups/${groupId}/bills/${bill.id}`}
                 className="flex-1 min-w-0 flex items-center gap-3 py-3"
             >
-                <span className="flex w-10 h-10 rounded-control bg-accent-soft text-accent items-center justify-center shrink-0">
+                {/* The same receipt glyph on every row, so it carries no
+                    distinguishing information. Below `md` the row is only 282px
+                    and the icon was costing the title 52px, which left it
+                    truncated to about six characters. */}
+                <span className="hidden md:flex w-10 h-10 rounded-control bg-accent-soft text-accent items-center justify-center shrink-0">
                     <Receipt size={18} strokeWidth={1.75} aria-hidden="true" />
                 </span>
                 <span className="min-w-0 flex-1">
-                    <span className="block text-body font-semibold text-text truncate">
+                    {/* line-clamp-2 rather than truncate: at phone widths the
+                        row cannot hold the title on one line, and cutting
+                        "Saree Dry Clean" to "Saree Dry Cle…" is worse than
+                        letting it wrap onto a second line. */}
+                    <span className="block text-body font-semibold text-text line-clamp-2">
                         {bill.title}
                     </span>
-                    <span className="block text-meta text-faint truncate">
-                        Paid by {payer} · {bill.created_at}
-                    </span>
+                    {/* No date here. It is already on the stamp at the end of
+                        the row, and repeating it in ISO form was noise. */}
+                    <span className="block text-meta text-faint truncate">Paid by {payer}</span>
                 </span>
             </Link>
 
-            <span className="shrink-0 flex items-baseline gap-3">
+            {/* Stacked below `md`, side by side from it. At 412px the row is
+                282px and the title cannot share one line with a status beside
+                the total, so the cluster puts the status above the amount. */}
+            <span className="shrink-0 flex flex-col items-end md:flex-row md:items-baseline md:gap-3">
                 <BillStatus status={status} />
                 <span className="shrink-0 font-money tnum text-body font-semibold text-text whitespace-nowrap">
-                    {bill.total_amount?.toFixed?.(2) ?? bill.total_amount}{' '}
+                    {rupees(bill.total_amount)}{' '}
                     <span className="text-meta text-faint">{bill.currency}</span>
                 </span>
             </span>
