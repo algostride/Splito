@@ -4,6 +4,7 @@ import ProtectedLayout from './layouts/ProtectedLayout';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
+import Friends from './pages/Friends';
 import GroupDetail from './pages/GroupDetail';
 import BillsTab from './pages/group/BillsTab';
 import BalancesTab from './pages/group/BalancesTab';
@@ -58,6 +59,12 @@ const router = createBrowserRouter([
               ],
             },
             { path: 'accept-invite/:token', element: <AcceptInvite /> },
+            /* A truncated invite link. Previously this fell through to the
+               catch-all and answered "404 Page not found" to someone who had
+               only lost the tail off a link -- which reads as the app being
+               broken rather than the link being incomplete. The page already
+               handles a missing token. */
+            { path: 'accept-invite', element: <AcceptInvite /> },
           ]
         },
       { path: 'login', element: <Login /> },

@@ -476,9 +476,12 @@ const CompoundBillForm = ({ members, onSubmit, isSubmitting, initialData, onCanc
                 </div>
             )}
 
-            {/* Tab 3: Splits. */}
+            {/* Tab 3: Splits. The row stacks below md: beside the pane, the
+                sidebar took 224px of a 348px phone viewport, leaving the split
+                grid about 124px -- and that grid pins a 112px amount input, so
+                nothing was left for the member names. */}
             {activeTab === 'splits' && (
-                <div className="flex min-h-[420px] rounded-card border border-border overflow-hidden">
+                <div className="flex flex-col md:flex-row min-h-[420px] rounded-card border border-border overflow-hidden">
                     <ItemSidebar
                         items={items}
                         selectedIndex={selectedItemIndex}

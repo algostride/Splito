@@ -77,9 +77,6 @@ const BillRow = ({ bill, groupId, currentUserId, open, onToggleMenu, onEdit, onD
                     {stamp.month}
                     {stamp.year ? ` ${stamp.year}` : ''}
                 </span>
-                {/* The date is on the stamp now, and those parts are hidden from
-                    assistive tech, so without this there is no date at all for a
-                    screen reader. Exposed once, on the row. */}
                 <span className="sr-only">{longDate(bill.created_at)}</span>
             </time>
 
@@ -183,7 +180,7 @@ const BillsTab = () => {
         if (!pendingDelete) return;
         try {
             setActionError(null);
-            await deleteBill(pendingDelete).unwrap();
+            await deleteBill(pendingDelete.id).unwrap();
             setPendingDelete(null);
         } catch (err) {
             console.error('Failed to delete bill', err);
@@ -193,10 +190,6 @@ const BillsTab = () => {
 
     return (
         <Screen>
-            {actionError && (
-                <Note tone="neg" className="mb-4">{actionError}</Note>
-            )}
-
             <Card pad="gutter">
                 <div className="flex items-center gap-2 pb-5 mb-1 border-b border-border">
                     <Receipt size={18} className="text-accent" aria-hidden="true" />
@@ -293,6 +286,12 @@ const BillsTab = () => {
                     </>
                 }
             >
+                {/* The failure has to be inside the dialog. It used to render
+                    in the page body above, which is behind this modal's
+                    `fixed inset-0 z-50` scrim -- so a failed delete left the
+                    dialog open with its reason dimmed and unreadable behind the
+                    scrim, reading as "the button does nothing". */}
+                {actionError && <Note tone="neg" className="mb-3">{actionError}</Note>}
                 <p className="text-body text-muted leading-relaxed">
                     <span className="font-semibold text-text">{pendingDelete?.title}</span> will be
                     removed and the group's balances recalculated. This cannot be undone.

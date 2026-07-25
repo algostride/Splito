@@ -1,198 +1,178 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { useGetGroupMembersQuery } from '../store/groupsApi';
-import { useGetBillDetailQuery, useUpdateBillMutation, useDeleteBillMutation } from '../store/billsApi';
+import { useGetBillDetailQuery, useDeleteBillMutation } from '../store/billsApi';
+import { describeError } from '../utils/errorMessage';
+import { longDate } from '../utils/dates';
 import {
     ArrowLeft,
     Receipt,
-    Save,
     Pencil,
     Trash2,
     Calendar,
     ChevronRight,
     Sparkles
 } from 'lucide-react';
-import SimpleBillForm from '../components/bills/SimpleBillForm';
-import CompoundBillForm from '../components/bills/CompoundBillForm';
+import Screen from '../components/shell/Screen';
+import Card from '../components/ui/Card';
+import Button from '../components/ui/Button';
+import { Note } from '../components/ui/EmptyState';
+import { LoadingBlock } from '../components/ui/Spinner';
+import Avatar from '../components/ui/Avatar';
 
 const BillDetail = () => {
     const { id: groupId, billId } = useParams();
     const navigate = useNavigate();
     const { data: members, isLoading: loadingMembers } = useGetGroupMembersQuery(groupId);
-    const { data: bill, isLoading: billLoading } = useGetBillDetailQuery(billId);
-    const [updateBill, { isLoading: isUpdating }] = useUpdateBillMutation();
+    // `error` was not destructured, so a 500 fell into the `!bill` branch and
+    // was reported as "Bill not found." -- telling the user the bill is gone
+    // when it is still there and the request is what failed.
+    const { data: bill, isLoading: billLoading, error: billError } = useGetBillDetailQuery(billId);
     const [deleteBill, { isLoading: isDeleting }] = useDeleteBillMutation();
 
-    const [isEditing, setIsEditing] = useState(false);
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-
-    const billType = bill?.items?.length === 1 ? 'simple' : 'compound';
-
-    const handleUpdate = async (extraPayload) => {
-        try {
-            await updateBill({
-                id: billId,
-                group: groupId,
-                currency: 'INR',
-                ...extraPayload,
-            }).unwrap();
-            setIsEditing(false);
-        } catch (err) {
-            console.error('Failed to update bill', err);
-        }
-    };
+    const [deleteError, setDeleteError] = useState(null);
 
     const handleDelete = async () => {
         try {
+            setDeleteError(null);
             await deleteBill(billId).unwrap();
             navigate(`/groups/${groupId}`);
         } catch (err) {
             console.error('Failed to delete bill', err);
+            setDeleteError(describeError(err));
         }
     };
 
     const isLoading = billLoading || loadingMembers;
-    if (isLoading) {
-        return (
-            <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-4">
-                <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                <p className="text-gray-500 font-medium">Loading bill...</p>
-            </div>
-        );
-    }
-
-    if (!bill) {
-        return <div className="p-8 max-w-4xl mx-auto text-red-500 text-center font-bold">Bill not found.</div>;
-    }
+    const memberName = (id) =>
+        members?.find((m) => m.user.id === id)?.user?.name || 'Unknown';
 
     return (
-        <div className="max-w-4xl mx-auto py-8 px-4 animate-fade-in-up">
-            <Link to={`/groups/${groupId}`} className="flex items-center text-blue-600 hover:text-blue-800 mb-6 transition-colors font-semibold group">
-                <ArrowLeft size={20} className="mr-2 group-hover:-translate-x-1 transition-transform" />
-                Back to Group
+        <Screen width="max-w-4xl">
+            <Link
+                to={`/groups/${groupId}`}
+                className="inline-flex items-center text-accent hover:text-accent-ink transition-colors font-semibold"
+            >
+                <ArrowLeft size={18} strokeWidth={2} className="mr-2" aria-hidden="true" />
+                Back to group
             </Link>
 
-            <div className="bg-white p-10 rounded-3xl shadow-xl shadow-blue-900/5 border border-gray-100">
-                <div className="flex items-center justify-between mb-10 border-b border-gray-50 pb-6">
-                    <div className="flex items-center space-x-3">
-                        <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center">
-                            <Receipt size={24} />
-                        </div>
-                        <div>
-                            <h2 className="text-3xl font-black text-gray-900 tracking-tight">{bill.title}</h2>
-                            <div className="flex items-center text-sm text-gray-400 mt-1">
-                                <Calendar size={14} className="mr-1" />
-                                {new Date(bill.created_at).toLocaleDateString()}
-                                <ChevronRight size={12} className="mx-1" />
-                                Paid by {bill.paid_by_detail?.name || bill.created_by?.name || 'Unknown'}
+            {isLoading ? (
+                <LoadingBlock text="Loading bill..." />
+            ) : billError ? (
+                <Note tone="neg">{describeError(billError)}</Note>
+            ) : !bill ? (
+                <Note tone="neg">Bill not found.</Note>
+            ) : (
+                <Card pad="gutter">
+                    <div className="flex flex-wrap justify-between items-start gap-4 pb-5 mb-5 border-b border-border">
+                        <div className="flex items-center gap-3 min-w-0">
+                            <div className="w-12 h-12 bg-accent-soft text-accent rounded-control flex items-center justify-center shrink-0">
+                                <Receipt size={22} strokeWidth={1.75} aria-hidden="true" />
+                            </div>
+                            <div className="min-w-0">
+                                <h1 className="text-title lg:text-display font-display font-semibold text-text truncate">
+                                    {bill.title}
+                                </h1>
+                                <div className="flex items-center text-meta text-faint mt-1">
+                                    <Calendar size={13} className="mr-1" aria-hidden="true" />
+                                    {longDate(bill.created_at)}
+                                    <ChevronRight size={12} className="mx-1" aria-hidden="true" />
+                                    Paid by {bill.paid_by_detail?.name || bill.created_by?.name || 'Unknown'}
+                                </div>
                             </div>
                         </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <Button
+                                variant="secondary"
+                                size="sm"
+                                onClick={() => navigate(`/groups/${groupId}/bills/${billId}/edit`)}
+                            >
+                                <Pencil size={15} strokeWidth={2} aria-hidden="true" />
+                                Edit
+                            </Button>
+                            <Button variant="danger" size="sm" onClick={() => setShowDeleteConfirm(true)}>
+                                <Trash2 size={15} strokeWidth={2} aria-hidden="true" />
+                                Delete
+                            </Button>
+                        </div>
                     </div>
-                    {!isEditing && (
-                        <div className="flex items-center space-x-3">
-                            <button
-                                onClick={() => setIsEditing(true)}
-                                className="flex items-center space-x-2 bg-blue-50 text-blue-600 px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-blue-100 transition-all"
-                            >
-                                <Pencil size={16} />
-                                <span>Edit</span>
-                            </button>
-                            <button
-                                onClick={() => setShowDeleteConfirm(true)}
-                                className="flex items-center space-x-2 bg-red-50 text-red-500 px-4 py-2.5 rounded-xl text-sm font-bold hover:bg-red-100 transition-all"
-                            >
-                                <Trash2 size={16} />
-                                <span>Delete</span>
-                            </button>
+
+                    {showDeleteConfirm && (
+                        <div className="mb-5 p-4 bg-neg-soft border border-neg/30 rounded-control">
+                            <p className="text-body font-semibold text-neg mb-3">
+                                Delete this bill? Balances will be recalculated.
+                            </p>
+                            {deleteError && (
+                                <Note tone="neg" className="mb-3">{deleteError}</Note>
+                            )}
+                            <div className="flex items-center gap-2">
+                                <Button variant="danger" size="sm" onClick={handleDelete} disabled={isDeleting}>
+                                    {isDeleting ? 'Deleting...' : 'Yes, delete'}
+                                </Button>
+                                <Button variant="ghost" size="sm" onClick={() => setShowDeleteConfirm(false)}>
+                                    Cancel
+                                </Button>
+                            </div>
                         </div>
                     )}
-                </div>
 
-                {showDeleteConfirm && (
-                    <div className="mb-8 p-6 bg-red-50 border border-red-100 rounded-2xl">
-                        <p className="text-red-700 font-bold mb-4">Are you sure you want to delete this bill?</p>
-                        <div className="flex items-center space-x-3">
-                            <button
-                                onClick={handleDelete}
-                                disabled={isDeleting}
-                                className="bg-red-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-red-600 transition-all disabled:opacity-50"
-                            >
-                                {isDeleting ? 'Deleting...' : 'Yes, Delete'}
-                            </button>
-                            <button
-                                onClick={() => setShowDeleteConfirm(false)}
-                                className="text-gray-500 px-5 py-2.5 rounded-xl text-sm font-bold hover:text-gray-700 transition-all"
-                            >
-                                Cancel
-                            </button>
+                    <div className="grid grid-cols-2 gap-card mb-6">
+                        <div className="bg-surface-2 rounded-card p-card">
+                            <p className="text-meta text-faint uppercase tracking-wider mb-1.5">
+                                Total amount
+                            </p>
+                            <p className="text-title font-display font-semibold font-money tnum text-text">
+                                ₹{Number(bill.total_amount).toFixed(2)}
+                            </p>
+                        </div>
+                        <div className="bg-surface-2 rounded-card p-card">
+                            <p className="text-meta text-faint uppercase tracking-wider mb-1.5">
+                                Created by
+                            </p>
+                            <p className="text-title font-semibold text-text truncate">
+                                {bill.created_by?.name || bill.created_by?.email?.split('@')[0] || 'Unknown'}
+                            </p>
                         </div>
                     </div>
-                )}
 
-                {isEditing ? (
-                    billType === 'simple' ? (
-                        <SimpleBillForm
-                            members={members}
-                            onSubmit={handleUpdate}
-                            isSubmitting={isUpdating}
-                            initialData={bill}
-                            onCancel={() => setIsEditing(false)}
-                        />
-                    ) : (
-                        <CompoundBillForm
-                            members={members}
-                            onSubmit={handleUpdate}
-                            isSubmitting={isUpdating}
-                            initialData={bill}
-                            onCancel={() => setIsEditing(false)}
-                        />
-                    )
-                ) : (
-                    <div className="space-y-8">
-                        <div className="grid grid-cols-2 gap-6">
-                            <div className="bg-gray-50 rounded-2xl p-6">
-                                <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2">Total Amount</p>
-                                <p className="text-3xl font-black text-gray-900">₹{Number(bill.total_amount).toFixed(2)}</p>
-                            </div>
-                            <div className="bg-gray-50 rounded-2xl p-6">
-                                <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2">Created By</p>
-                                <p className="text-lg font-bold text-gray-900">{bill.created_by?.name || bill.created_by?.email?.split('@')[0] || 'Unknown'}</p>
-                            </div>
+                    <div className="space-y-4">
+                        <div className="flex items-center gap-2 text-text">
+                            <Sparkles size={18} className="text-accent" aria-hidden="true" />
+                            <h2 className="text-title font-semibold">Line items</h2>
                         </div>
 
-                        <div className="space-y-4">
-                            <div className="flex items-center space-x-2 text-blue-900">
-                                <Sparkles size={20} className="text-blue-500" />
-                                <h3 className="text-xl font-black tracking-tight">Line Items</h3>
-                            </div>
-
-                            {bill.items.map((item, idx) => (
-                                <div key={item.id || idx} className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100 space-y-4">
-                                    <div className="flex justify-between items-center">
-                                        <h4 className="font-bold text-gray-900">{item.name}</h4>
-                                        <p className="font-extrabold text-lg text-gray-900">₹{Number(item.amount).toFixed(2)}</p>
-                                    </div>
-                                    <div className="flex flex-wrap gap-2">
-                                        {item.assignments.map((assignment, aIdx) => {
-                                            const member = members?.find(m => m.user.id === assignment.user_id);
-                                            return (
-                                                <div key={aIdx} className="flex items-center space-x-2 bg-white border border-gray-100 rounded-xl px-3 py-2">
-                                                    <div className="w-6 h-6 rounded-full bg-blue-50 border border-blue-100 flex items-center justify-center text-[10px] font-bold text-blue-600">
-                                                        {(member?.user?.name || member?.user?.email || 'U')[0].toUpperCase()}
-                                                    </div>
-                                                    <span className="text-xs font-bold text-gray-700">{member?.user?.name || 'Unknown'}</span>
-                                                    <span className="text-xs font-black text-blue-600">₹{Number(assignment.share_amount).toFixed(2)}</span>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
+                        {bill.items.map((item, idx) => (
+                            <div key={item.id || idx} className="bg-surface-2 rounded-card p-card space-y-3">
+                                <div className="flex justify-between items-center gap-3">
+                                    <h3 className="text-body font-semibold text-text truncate">{item.name}</h3>
+                                    <p className="font-money tnum text-body font-semibold text-text shrink-0">
+                                        ₹{Number(item.amount).toFixed(2)}
+                                    </p>
                                 </div>
-                            ))}
-                        </div>
+                                <div className="flex flex-wrap gap-2">
+                                    {item.assignments.map((assignment, aIdx) => (
+                                        <div
+                                            key={aIdx}
+                                            className="flex items-center gap-2 bg-surface border border-border rounded-control px-3 py-1.5"
+                                        >
+                                            <Avatar name={memberName(assignment.user_id)} size="xs" />
+                                            <span className="text-meta text-muted">
+                                                {memberName(assignment.user_id)}
+                                            </span>
+                                            <span className="text-meta font-money tnum font-semibold text-accent">
+                                                ₹{Number(assignment.share_amount).toFixed(2)}
+                                            </span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
                     </div>
-                )}
-            </div>
-        </div>
+                </Card>
+            )}
+        </Screen>
     );
 };
 
