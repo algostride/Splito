@@ -6,17 +6,29 @@
  * logic here is the point: three call sites had each grown their own version
  * and only one of them handled the keyboard.
  *
- * Keyboard behaviour is Escape and an outside click. Arrow keys and focus
- * movement are not handled yet.
+ * Keyboard behaviour, added after an audit found only Escape and an outside
+ * click: focus moves into the menu on open and back to the trigger on close, and
+ * Arrow keys move between items. Without the first two, opening a menu with the
+ * keyboard left focus on the trigger, so Tab walked the rest of the page and the
+ * menu items were effectively unreachable.
+ *
+ * The document listeners are registered only while open. They used to be
+ * registered unconditionally, so the Bills tab -- which renders a Popover per
+ * row -- added two document listeners per bill, and every Escape anywhere on the
+ * page fired all of them.
  */
 
 import { useEffect, useRef } from 'react';
+
+const FOCUSABLE = 'button:not([disabled]), [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 const Popover = ({ open, onClose, trigger, children, align = 'right', className = '' }) => {
   const wrapRef = useRef(null);
   const menuRef = useRef(null);
 
   useEffect(() => {
+    if (!open) return undefined;
+
     const onPointerDown = (event) => {
       if (!wrapRef.current?.contains(event.target)) onClose();
     };
@@ -34,6 +46,49 @@ const Popover = ({ open, onClose, trigger, children, align = 'right', className 
     };
   }, [open, onClose]);
 
+  // Move focus in on open, and hand it back to the trigger on close, so a
+  // keyboard user is not left tabbing through the page behind the menu.
+  useEffect(() => {
+    if (!open) return undefined;
+
+    // Captured now, not read from the ref in the cleanup: closing sets `open`
+    // false, which unmounts the menu, so by the time the cleanup runs
+    // menuRef.current is already null.
+    const menu = menuRef.current;
+    const triggerEl = wrapRef.current?.querySelector(FOCUSABLE);
+    menu?.querySelector(FOCUSABLE)?.focus();
+
+    return () => {
+      /* Return focus to the trigger unconditionally, which is the standard
+         menu-button behaviour. The obvious guard -- "only if focus is still in
+         the menu" -- can never pass: closing unmounts the menu, so focus has
+         already fallen back to <body> by the time this runs.
+
+         The one case worth skipping is a close that navigates away, where the
+         trigger is no longer in the document. Focusing a detached node is a
+         no-op that silently drops focus to the body, so it is checked for. */
+      if (!triggerEl?.isConnected) return;
+      triggerEl.focus();
+    };
+  }, [open, onClose]);
+
+  // Arrow keys and Home/End, the standard menu affordance.
+  const onMenuKeyDown = (event) => {
+    const items = [...(menuRef.current?.querySelectorAll(FOCUSABLE) ?? [])];
+    if (items.length === 0) return;
+    const at = items.indexOf(document.activeElement);
+
+    const focusAt = (index) => {
+      event.preventDefault();
+      items[(index + items.length) % items.length]?.focus();
+    };
+
+    if (event.key === 'ArrowDown') focusAt(at + 1);
+    else if (event.key === 'ArrowUp') focusAt(at - 1);
+    else if (event.key === 'Home') focusAt(0);
+    else if (event.key === 'End') focusAt(items.length - 1);
+  };
+
   return (
     <div ref={wrapRef} className="relative">
       {trigger}
@@ -45,6 +100,7 @@ const Popover = ({ open, onClose, trigger, children, align = 'right', className 
           // owns the expanded state. Here it documents the menu's own
           // visibility for anything reading the panel.
           aria-expanded="true"
+          onKeyDown={onMenuKeyDown}
           className={[
             'absolute top-[calc(100%+8px)] z-40 min-w-56 rounded-card border border-border',
             'bg-surface shadow-pop p-2',

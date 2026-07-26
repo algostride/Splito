@@ -31,6 +31,11 @@ const Modal = ({ open, onClose, title, children, footer, labelledBy, className =
 
     const onKeyDown = (event) => {
       if (event.key === 'Escape') {
+        // stopImmediatePropagation, not stopPropagation. This listener and the
+        // Drawer's are both on `document`, and stopPropagation does not stop
+        // another listener on the same node -- so one Escape closed the modal
+        // and the drawer behind it together.
+        event.stopImmediatePropagation();
         onClose();
         return;
       }

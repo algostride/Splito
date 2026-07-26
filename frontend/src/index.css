@@ -194,6 +194,34 @@
       font-variant-numeric: tabular-nums;
     }
 
+    /* One focus ring for the whole app, set once here rather than per
+       component. It replaces four ad-hoc styles that had drifted apart:
+
+         - Button carried `focus-visible:outline-accent` inline
+         - Input carried `focus:outline-2`, so its ring appeared on mouse
+           click as well as keyboard focus
+         - Login and Register used `focus:ring-4` with `outline-none`
+         - the rail, the tab bar, PopoverItem and the topbar buttons carried
+           nothing at all and fell back to whatever the browser drew, which is
+           not this design's colour and varies by platform
+
+       `:focus-visible` rather than `:focus` so the ring appears for keyboard
+       and assistive-tech navigation and not for a mouse click, which is what
+       `Input` was getting wrong. `not(:focus-visible)` removes the UA default
+       only where we are drawing our own; without it a browser that also paints
+       its own ring shows two.
+
+       `:where()` keeps this at zero specificity, so a component that genuinely
+       needs a different ring can still override it. */
+    :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+      outline: 2px solid var(--color-accent);
+      outline-offset: 2px;
+      border-radius: var(--radius-control);
+    }
+
+    :where(a, button, input, select, textarea, [tabindex]):not(:focus-visible) {
+      outline: none;
+    }
   }
 
 /* Purposeful micro-motion. Everything transform-based is disabled under

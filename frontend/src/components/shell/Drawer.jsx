@@ -82,8 +82,17 @@ const Drawer = ({ open, onClose }) => {
       // it, and the E2E suite caught it.
         className="md:hidden fixed inset-0 z-40 pointer-events-none group"
         data-drawer-open={open ? 'true' : 'false'}
-        // aria-hidden keeps the closed panel, and every link in it, out of the
-        // tab order, and hides it from assistive tech while it is off-screen.
+        // `inert`, not `aria-hidden`. The comment here used to claim
+        // aria-hidden "keeps the off-canvas links out of the tab order", which
+        // is not what aria-hidden does: it hides content from assistive tech
+        // but leaves every link focusable, so a keyboard user on a phone could
+        // Tab into a panel that is translated off-screen and invisible. `inert`
+        // takes the subtree out of the tab order *and* the a11y tree together,
+        // which is what was wanted. aria-hidden is kept as well for browsers
+        // without inert support.
+        // React 19 takes `inert` as a boolean prop, not an empty-string
+        // attribute. Passing `''` is coerced away and the attribute never lands.
+        inert={!open}
         aria-hidden={!open}
     >
       <div

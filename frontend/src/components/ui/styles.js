@@ -12,7 +12,7 @@
 
 const BUTTON_BASE =
   'press inline-flex items-center justify-center gap-2 rounded-control font-semibold ' +
-  'focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ' +
+  // No focus utilities here: the ring comes from one rule in index.css.
   'whitespace-nowrap select-none disabled:opacity-50 disabled:pointer-events-none';
 
 const BUTTON_VARIANTS = {
@@ -74,8 +74,10 @@ export const inputClass = ({ className = '', invalid = false, inset = 'none', si
     INPUT_HEIGHT[size] ?? INPUT_HEIGHT.md,
     INPUT_PAD[inset] ?? INPUT_PAD.none,
     invalid
-      ? 'border-neg focus:border-neg focus:outline-neg'
-      : 'focus:border-accent focus:outline-accent',
+      // focus-visible, not focus: an error ring on a mouse click reads as the
+      // field being broken rather than the field being focused.
+      ? 'border-neg focus-visible:border-neg focus-visible:outline-neg'
+      : 'focus-visible:border-accent focus-visible:outline-accent',
     className,
   ]
     .filter(Boolean)
