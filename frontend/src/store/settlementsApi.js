@@ -16,14 +16,14 @@ export const settlementsApi = api.injectEndpoints({
                 method: 'POST',
                 body: settlementData,
             }),
-            invalidatesTags: ['Settlement'],
+            invalidatesTags: ['Settlement', 'Friend'],
         }),
         deleteSettlement: builder.mutation({
             query: (id) => ({
                 url: `settlements/${id}/`,
                 method: 'DELETE',
             }),
-            invalidatesTags: ['Settlement'],
+            invalidatesTags: ['Settlement', 'Friend'],
             // Same reasoning as deleteBill: removing a row from a list needs no
             // server arithmetic, so the optimistic version cannot be wrong.
             // Settlements *created* are not optimistic, because that changes

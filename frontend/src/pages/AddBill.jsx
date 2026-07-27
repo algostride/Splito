@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useDispatch } from 'react-redux';
 import { useParams, useNavigate, Link, useSearchParams } from 'react-router-dom';
 import { useGetGroupMembersQuery } from '../store/groupsApi';
 import { useCreateBillMutation, useGetBillDetailQuery, useUpdateBillMutation } from '../store/billsApi';
@@ -7,6 +8,7 @@ import { describeError } from '../utils/errorMessage';
 import SimpleBillForm from '../components/bills/SimpleBillForm';
 import CompoundBillForm from '../components/bills/CompoundBillForm';
 import Screen from '../components/shell/Screen';
+import { notify } from '../store/toastSlice';
 import Card from '../components/ui/Card';
 import { Note } from '../components/ui/EmptyState';
 import BillTypeOptions from '../components/bills/BillTypeOptions';
@@ -20,6 +22,7 @@ const AddBill = () => {
 
     const { data: members, isLoading: loadingMembers } = useGetGroupMembersQuery(groupId);
     const { data: bill, isLoading: billLoading, error: billError } = useGetBillDetailQuery(billId, { skip: !isEdit });
+    const dispatch = useDispatch();
     const [createBill, { isLoading: isCreating }] = useCreateBillMutation();
     const [updateBill, { isLoading: isUpdating }] = useUpdateBillMutation();
 
@@ -38,9 +41,13 @@ const AddBill = () => {
         try {
             if (isEdit) {
                 await updateBill({ id: billId, group: groupId, currency: bill?.currency || 'INR', ...payload }).unwrap();
+                dispatch(notify(`Updated "${payload.title}"`));
                 navigate(`/groups/${groupId}/bills/${billId}`);
             } else {
                 await createBill({ group: groupId, currency: 'INR', ...payload }).unwrap();
+                // Navigating straight to the group looked like the save
+                // silently doing nothing when it worked.
+                dispatch(notify(`Added "${payload.title}"`));
                 navigate(`/groups/${groupId}`);
             }
         } catch (err) {

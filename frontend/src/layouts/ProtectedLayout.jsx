@@ -1,6 +1,7 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import AppShell from '../components/shell/AppShell';
+import ToastRegion from '../components/ui/ToastRegion';
 
 /**
  * Auth gate plus the app chrome. The `state.from` carry is load-bearing: an
@@ -15,7 +16,15 @@ const ProtectedLayout = () => {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 
-  return <AppShell />;
+  return (
+    <>
+      <AppShell />
+      {/* Mounted here, above the outlet, so a mutation on any tab can report
+          without each screen owning a region. It is inside the auth gate on
+          purpose: a message about a failed sign-in belongs on the login form. */}
+      <ToastRegion />
+    </>
+  );
 };
 
 export default ProtectedLayout;

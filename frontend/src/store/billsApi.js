@@ -12,7 +12,7 @@ export const billsApi = api.injectEndpoints({
                 method: 'POST',
                 body: billData,
             }),
-            invalidatesTags: ['Bill', 'Settlement'],
+            invalidatesTags: ['Bill', 'Settlement', 'Friend'],
         }),
         getBillDetail: builder.query({
             query: (id) => `bills/${id}/`,
@@ -28,6 +28,7 @@ export const billsApi = api.injectEndpoints({
                 { type: 'Bill', id },
                 'Bill',
                 'Settlement',
+                'Friend',
             ],
         }),
         deleteBill: builder.mutation({
@@ -35,7 +36,7 @@ export const billsApi = api.injectEndpoints({
                 url: `bills/${id}/`,
                 method: 'DELETE',
             }),
-            invalidatesTags: ['Bill', 'Settlement'],
+            invalidatesTags: ['Bill', 'Settlement', 'Friend'],
             /* The row leaves the list immediately and comes back on failure.
 
                This is the one shape of optimism that is safe here. Removing a
