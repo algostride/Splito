@@ -39,7 +39,11 @@ const Item = (props) => {
     <span className="shrink-0">
       <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
     </span>
-    <span className="truncate">{label}</span>
+    {/* min-w-0 because this is a flex item: without it, min-width: auto
+        keeps the box at the full string width and truncate never engages,
+        so a long group name overflows the 248px panel instead of being
+        clipped. No sr-only here -- the drawer always shows its labels. */}
+    <span className="truncate min-w-0">{label}</span>
   </NavLink>
   );
 };
@@ -141,7 +145,7 @@ const Drawer = ({ open, onClose }) => {
 
         <div className="shrink-0 p-3 border-t border-border flex items-center gap-2 px-1.5">
           <Avatar name={user?.name || ''} size="sm" />
-          <div className="flex-1">
+          <div className="min-w-0 flex-1">
             <div className="text-body font-semibold leading-tight text-text truncate">
               {user?.name || 'Signed in'}
             </div>

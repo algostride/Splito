@@ -34,10 +34,29 @@ const NavItem = (props) => {
     <span className="shrink-0">
       <Icon size={18} strokeWidth={1.75} aria-hidden="true" />
     </span>
-    {/* Labels stay in the accessibility tree between md and lg, where the rail
-        is icon-only and there is no visible text. `not-sr-only` is a full reset:
-        it sets white-space: normal and overflow: visible. */}
-    <span className="sr-only lg:not-sr-only truncate">{label}</span>
+    {/* Two spans on purpose, and the split matters.
+
+        The outer one carries the sr-only / not-sr-only pair, which exists so
+        the name stays in the accessibility tree between md and lg where the
+        rail is icon-only. `not-sr-only` is a full reset: it sets
+        `white-space: normal` and `overflow: visible`. On one element alongside
+        `truncate` it silently won -- both selectors are a single class, so
+        source order decided, and the responsive one is emitted later. A long
+        group name then wrapped inside a fixed 40px row and spilled into its
+        neighbours.
+
+        So the reset and the truncation live on different elements. `truncate`
+        goes on an inner `block`, which is not a flex item, so no rule from
+        either utility can reach it.
+
+        `min-w-0` on the outer is not optional. It is a flex item, and flex items
+        default to `min-width: auto`, which refuses to shrink below the
+        min-content width -- and with `white-space: nowrap` that is the whole
+        string. Without it, truncate would never engage and the text would
+        overflow horizontally instead. */}
+    <span className="sr-only lg:not-sr-only min-w-0">
+      <span className="block truncate">{label}</span>
+    </span>
   </NavLink>
   );
 };
@@ -99,7 +118,10 @@ const Rail = () => {
       <div className="p-3 space-y-1 border-t border-border overflow-y-auto">
         <div className="px-3 pb-1.5 flex items-center gap-2 hidden lg:flex">
           <span className="w-1.5 h-1.5 rounded-full bg-accent shrink-0" />
-          <span className="text-meta text-faint font-semibold uppercase truncate">
+          {/* min-w-0 for the same flex-item reason as the nav labels. This one
+              is 11 characters so it cannot break today, but it sits beside a
+              shrink-0 dot and the pattern is worth being consistent about. */}
+          <span className="text-meta text-faint font-semibold uppercase truncate min-w-0">
             Your groups
           </span>
         </div>
