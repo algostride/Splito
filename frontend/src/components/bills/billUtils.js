@@ -1,3 +1,48 @@
+/**
+ * How much precision each split mode carries.
+ *
+ * `shares` counts things, so one decimal is enough to express "half a loaf".
+ * It used to be integers with a floor of 1, which made a real and intuitive
+ * split impossible: 5 loaves shared as 4.5 and 0.5 is how a person actually
+ * thinks about it, whereas 9 and 1 makes them do the rescaling in their head.
+ * The weights are relative -- the server divides by their sum -- so 4.5 : 0.5 and
+ * 9 : 1 are the same 90/10 split, but only one of them is natural to type.
+ *
+ * `percent` is money-adjacent, so two decimals, which is also what the input's
+ * step has always offered.
+ */
+export const DP = { shares: 1, percent: 2 };
+export const STEP = { shares: 0.1, percent: 0.01 };
+export const MIN = { shares: 0.1, percent: 0 };
+
+/**
+ * A split value as the user should see it.
+ *
+ * The API sends `split_value` at its column's storage scale, which is six
+ * decimal places, so a share of 1 arrives as "1.000000" and a backfilled
+ * percentage arrives as "14.516129". Neither belongs in a text field: one is
+ * pure padding, the other is more precision than anyone splitting a bill wants.
+ *
+ * Rounds to the mode's precision and then strips trailing zeros, so a genuine
+ * value survives (0.333333 is never silently mangled) while padding does not
+ * (1.000000 becomes 1, 20.000000 becomes 20). Rounding percent to 2dp means a
+ * re-save writes 14.52 rather than the stored 14.516129; that is the same value
+ * a user typing 14.52 would produce, and the resulting money drift is well under
+ * a rupee on any realistic bill.
+ */
+export const trimSplitValue = (raw, splitMode) => {
+    // Checked before Number(), because Number(null) and Number('') are both 0 --
+    // which would turn a missing value into a real-looking 0, and a 0 share is
+    // dropped as "not in the split" by computeAssignments. A missing value has
+    // to stay missing.
+    if (raw === null || raw === undefined || raw === '') return '';
+    const n = Number(raw);
+    // A value that will not parse falls back to the original rather than
+    // rendering "NaN" into an input the user then has to clear.
+    if (!Number.isFinite(n)) return String(raw);
+    return String(Number(n.toFixed(DP[splitMode])));
+};
+
 export const createEmptyItem = () => ({
     name: '',
     amount: '',
@@ -70,9 +115,24 @@ export const evenPercents = (uids) => {
 
 const splitWeights = (item) => {
     if (item.splitMode === 'shares') {
+        /* parseFloat, not parseInt.
+
+           This truncated 4.5 to 4 and 0.5 to 0, and the `> 0` filter then
+           dropped the 0.5 member entirely, so a half-loaf split silently gave
+           the other member the whole bill. The server has always accepted
+           fractional weights -- it only rejects negatives -- so this was the
+           frontend refusing to represent them, and it is why shares looked like
+           they worked at all: integers survive parseInt, so only the integer
+           case was ever exercised.
+
+           Rounded to the mode's precision so a stray extra decimal in the
+           input cannot leak into the money. */
         return {
             entries: item.selectedMembers
-                .map(uid => ({ uid, value: parseInt(item.memberShares[uid], 10) || 0 }))
+                .map(uid => ({
+                    uid,
+                    value: Number((parseFloat(item.memberShares[uid]) || 0).toFixed(DP.shares)),
+                }))
                 .filter(e => e.value > 0),
             basis: null,
         };
@@ -81,7 +141,7 @@ const splitWeights = (item) => {
         entries: item.selectedMembers
             .map(uid => ({
                 uid,
-                value: Math.round((parseFloat(item.memberPercents[uid]) || 0) * 100) / 100,
+                value: Number((parseFloat(item.memberPercents[uid]) || 0).toFixed(DP.percent)),
             }))
             .filter(e => e.value > 0),
         basis: 100,
@@ -120,11 +180,18 @@ export const hydrateItem = (apiItem) => {
     assignments.forEach(a => {
         const uid = a.user_id;
         if (hasStoredValues) {
-            if (splitMode === 'shares') memberShares[uid] = String(a.split_value);
-            else memberPercents[uid] = String(a.split_value);
+            // trimSplitValue, not String(): the API sends split_value at the
+            // column's six-decimal storage scale, so a share of 1 came back as
+            // "1.000000" and filled the input with it.
+            const value = trimSplitValue(a.split_value, splitMode);
+            if (splitMode === 'shares') memberShares[uid] = value;
+            else memberPercents[uid] = value;
         } else {
+            // Routed through the same helper so there is one place that decides
+            // what a split value looks like. It already rounded and stripped
+            // here; the helper does it for both branches now.
             const pct = amount > 0 ? (parseFloat(a.share_amount) / amount) * 100 : 0;
-            memberPercents[uid] = String(Number(pct.toFixed(2)));
+            memberPercents[uid] = trimSplitValue(pct.toFixed(4), 'percent');
         }
     });
 

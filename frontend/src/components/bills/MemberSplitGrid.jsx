@@ -1,9 +1,4 @@
-// Split precision, duplicated here until the modes' rules live with the rest of
-// the split arithmetic in billUtils.
-const DP = { shares: 1, percent: 2 };
-const STEP = { shares: 1, percent: 0.01 };
-const MIN = { shares: 1, percent: 0 };
-
+import { DP, STEP, MIN } from './billUtils';
 import Card from '../ui/Card';
 import { initials } from '../ui/styles';
 
@@ -15,8 +10,15 @@ const MemberSplitGrid = ({
     onShareChange,
     onPercentChange
 }) => {
+    /* The Card is a labelled group because these inputs otherwise have no
+       name: a screen reader reaches a bare "1" with nothing to say what it is.
+       The member name sits next to it, but adjacency is not an association. */
     return (
-        <Card className="overflow-hidden">
+        <Card
+            role="group"
+            aria-label="Split between members"
+            className="overflow-hidden"
+        >
             <div className="p-2">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                     {members?.map(membership => {
@@ -32,17 +34,6 @@ const MemberSplitGrid = ({
                             membership.user.name || membership.user.email,
                         );
                         const computed = computations.find(a => a.user_id === uid);
-                        const current = parseFloat(rawValue);
-                        const base = Number.isNaN(current) ? MIN[item.splitMode] : current;
-                        const stepBy = (dir) => {
-                            const next = Math.max(
-                                MIN[item.splitMode],
-                                Number((base + dir * STEP[item.splitMode]).toFixed(DP[item.splitMode])),
-                            );
-                            item.splitMode === 'shares'
-                                ? onShareChange(uid, String(next))
-                                : onPercentChange(uid, String(next));
-                        };
                         const rawValue = item.splitMode === 'shares'
                             ? (item.memberShares[uid] || '')
                             : (item.memberPercents[uid] || '');

@@ -234,8 +234,11 @@ const CompoundBillForm = ({ members, onSubmit, isSubmitting, initialData, onCanc
     const total = parseFloat(totalAmount) || 0;
     const itemsMatch = Math.abs(itemsTotal - total) < 0.01;
 
+    /* noValidate: see SimpleBillForm. The browser blocking submit before
+       handleSubmit ran turned a step-misaligned split value into a native bubble
+       rather than the app's own message. */
     return (
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} noValidate>
             {/* Overview / Items / Splits is component state, not a route, so
                 it uses the presentational half of the tab bar. */}
             <UnderlineTabs

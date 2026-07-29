@@ -151,7 +151,14 @@ const SimpleBillForm = ({ members, onSubmit, isSubmitting, initialData, onCancel
     const computations = computeAssignments(item);
     const summary = getItemSummary(item);
 
-        <form onSubmit={handleSubmit} className="space-y-card">
+    /* noValidate: the browser and the app both validate, and the browser wins by
+       blocking submit before handleSubmit ever runs. The split fields carry
+       min/step for the stepper's benefit, not as a correctness gate, so a
+       step-misaligned value used to surface as a native bubble in the visitor's
+       locale instead of the app's own message. handleSubmit does the real
+       checking. */
+    return (
+        <form onSubmit={handleSubmit} noValidate className="space-y-card">
             {/* Bill Details */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-card">
                 <Field
