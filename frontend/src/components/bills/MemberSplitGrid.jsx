@@ -1,6 +1,7 @@
-import { DP, STEP, MIN } from './billUtils';
 import Card from '../ui/Card';
 import { initials } from '../ui/styles';
+import { DP, STEP, MIN } from './billUtils';
+import StepperInput from '../ui/StepperInput';
 
 const MemberSplitGrid = ({
     members,
@@ -58,45 +59,24 @@ const MemberSplitGrid = ({
                                     </div>
                                 </div>
                                 <div className="flex flex-col items-stretch gap-1 shrink-0 w-28">
-<div className="relative flex items-center">
-                                    <button
-                                        type="button"
-                                        disabled={!isSelected}
-                                        onClick={(e) => { e.stopPropagation(); stepBy(-1); }}
-                                        aria-label={`Decrease split for ${membership.user.name || membership.user.email}`}
-                                        className={`absolute left-0 h-full w-6 flex items-center justify-center text-sm font-black leading-none transition-colors ${!isSelected ? 'text-faint' : 'text-muted hover:text-text'}`}
-                                    >
-                                        &minus;
-                                    </button>
-                                    <input
-                                        type="number"
-                                        value={rawValue}
-                                        disabled={!isSelected}
-                                        min={MIN[item.splitMode]}
-                                        step={STEP[item.splitMode]}
-                                        placeholder={item.splitMode === 'shares' ? '1' : '0'}
-                                        onClick={(e) => e.stopPropagation()}
-                                        onChange={(e) => {
-                                            item.splitMode === 'shares'
-                                                ? onShareChange(uid, e.target.value)
-                                                : onPercentChange(uid, e.target.value);
-                                        }}
-                                        className={`no-number-spinner w-full min-w-0 h-8 text-center pl-7 pr-7 border rounded-control ${
-                                            isSelected
-                                                ? 'bg-accent-ink border-accent-ink text-on-accent placeholder:text-accent-2'
-                                                : 'bg-surface-3 border-border-2 text-faint placeholder:text-faint cursor-not-allowed'
-                                        }`}
-                                    />
-                                    <button
-                                        type="button"
-                                        disabled={!isSelected}
-                                        onClick={(e) => { e.stopPropagation(); stepBy(1); }}
-                                        aria-label={`Increase split for ${membership.user.name || membership.user.email}`}
-                                        className={`absolute right-0 h-full w-6 flex items-center justify-center text-sm font-black leading-none transition-colors ${!isSelected ? 'text-faint' : 'text-muted hover:text-text'}`}
-                                    >
-                                        +
-                                    </button>
-                                </div>
+<StepperInput
+    value={rawValue}
+    onChange={(next) => {
+        item.splitMode === 'shares' ? onShareChange(uid, next) : onPercentChange(uid, next);
+    }}
+    min={MIN[item.splitMode]}
+    step={STEP[item.splitMode]}
+    precision={DP[item.splitMode]}
+    disabled={!isSelected}
+    placeholder={item.splitMode === 'shares' ? '1' : '0'}
+    decrementLabel={`Decrease split for ${membership.user.name || membership.user.email}`}
+    incrementLabel={`Increase split for ${membership.user.name || membership.user.email}`}
+    inputClassName={`text-meta font-money tnum font-semibold ${
+        isSelected
+            ? 'bg-accent-ink border-accent-ink text-on-accent placeholder:text-accent-2'
+            : 'bg-surface-3 border-border-2 text-faint placeholder:text-faint cursor-not-allowed'
+    }`}
+/>
                                     <div className={`h-4 flex items-center justify-end text-meta font-money tnum font-semibold ${
                                         isSelected ? 'text-on-accent/70' : 'text-faint'
                                     } ${computed ? '' : 'opacity-60'}`}>
