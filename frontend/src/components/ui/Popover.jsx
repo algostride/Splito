@@ -26,15 +26,30 @@ const Popover = ({ open, onClose, trigger, children, align = 'right', className 
   const wrapRef = useRef(null);
   const menuRef = useRef(null);
 
+  /* Latest-onClose ref, for the reason given in Modal.jsx. Depending on
+     `onClose` directly meant this effect tore down and re-registered both
+     document listeners on every render, because every call site passes an inline
+     arrow. The focus effect below was already keyed on `open` alone, which is
+     why only the Modal stole the caret from a typing user. */
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   useEffect(() => {
     if (!open) return undefined;
 
     const onPointerDown = (event) => {
-      if (!wrapRef.current?.contains(event.target)) onClose();
+      if (!wrapRef.current?.contains(event.target)) onCloseRef.current();
     };
     const onKeyDown = (event) => {
       if (event.key === 'Escape') {
-        onClose();
+        // stopImmediatePropagation, not stopPropagation: the Drawer and Modal
+        // also listen for Escape on `document`, and stopPropagation does not
+        // stop a listener on the *same* node, so one Escape used to close the
+        // popover, the drawer behind it and any open modal all at once.
+        event.stopImmediatePropagation();
+        onCloseRef.current();
       }
     };
 
@@ -44,7 +59,7 @@ const Popover = ({ open, onClose, trigger, children, align = 'right', className 
       document.removeEventListener('mousedown', onPointerDown);
       document.removeEventListener('keydown', onKeyDown);
     };
-  }, [open, onClose]);
+  }, [open]);
 
   // Move focus in on open, and hand it back to the trigger on close, so a
   // keyboard user is not left tabbing through the page behind the menu.
@@ -70,7 +85,7 @@ const Popover = ({ open, onClose, trigger, children, align = 'right', className 
       if (!triggerEl?.isConnected) return;
       triggerEl.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   // Arrow keys and Home/End, the standard menu affordance.
   const onMenuKeyDown = (event) => {

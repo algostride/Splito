@@ -21,6 +21,25 @@ const Modal = ({ open, onClose, title, children, footer, labelledBy, className =
   const panelRef = useRef(null);
   const returnFocusRef = useRef(null);
 
+  /* The latest onClose, held in a ref so the effect below can depend on `open`
+     alone.
+
+     Taking `onClose` as a dependency was the whole bug. Every call site in the
+     app passes an inline arrow -- `onClose={() => setPendingDelete(null)}` and
+     friends -- so every render produced a new function identity, the effect
+     re-fired, and its cleanup restored focus to the opener before the effect
+     body moved focus to the panel again. Typing one character in any modal
+     field therefore threw the caret out of the input, and you had to click back
+     in before every keystroke.
+
+     useCallback at the call sites would fix the symptom and then rot: inline
+     arrows are the house style and useCallback appears nowhere outside
+     useTheme. A ref makes the effect insensitive to it entirely. */
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  });
+
   useEffect(() => {
     if (!open) return undefined;
 
@@ -36,7 +55,7 @@ const Modal = ({ open, onClose, title, children, footer, labelledBy, className =
         // another listener on the same node -- so one Escape closed the modal
         // and the drawer behind it together.
         event.stopImmediatePropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (event.key !== 'Tab') return;
@@ -74,7 +93,7 @@ const Modal = ({ open, onClose, title, children, footer, labelledBy, className =
       root.style.overflow = prevOverflow;
       if (returnFocusRef.current instanceof HTMLElement) returnFocusRef.current.focus();
     };
-  }, [open, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

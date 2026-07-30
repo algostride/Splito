@@ -62,6 +62,16 @@ const Drawer = ({ open, onClose }) => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
+    // Latest-onClose ref, for the reason given in Modal.jsx: every call site
+    // passes an inline arrow, so depending on `onClose` directly made this
+    // effect tear down and re-register its listener on every single render.
+    // Harmless while it only closed on Escape, but it is the same defect that
+    // stole the caret from a typing user in the modal.
+    const onCloseRef = useRef(onClose);
+    useEffect(() => {
+      onCloseRef.current = onClose;
+    });
+
   useEffect(() => {
     if (!open) return undefined;
     const onKeyDown = (event) => {
@@ -69,12 +79,12 @@ const Drawer = ({ open, onClose }) => {
       // the same Escape. See Modal.jsx.
       if (event.key === 'Escape') {
         event.stopImmediatePropagation();
-        onClose();
+        onCloseRef.current();
       }
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [open, onClose]);
+  }, [open]);
 
   return (
     <div
