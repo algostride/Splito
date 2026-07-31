@@ -78,3 +78,38 @@ before exiting — item totals, share totals, zero-sum balances and cross-endpoi
 `your_net` — and exits non-zero if anything fails, so broken seed data cannot be
 mistaken for a UI bug.
 
+## Tests
+
+```
+cd backend  && python manage.py test apps    # 88 tests
+cd frontend && npm run lint
+cd frontend && npm run build
+cd frontend && npx playwright install chromium   # once, ~150MB
+cd frontend && npm run test:e2e                # 223 tests, ~100s
+```
+
+The backend suite covers auth, invites, group isolation, both bill types, share/percent splits, the money-conservation rules above, the `0004` backfill, balances/debts, and the friends endpoint.
+
+### Frontend E2E
+
+Playwright drives real Chromium at two viewports (1440x900 and Pixel 7). The API is
+stubbed, so the suite needs no database and no Django process — `npm run test:e2e`
+starts only the Vite dev server.
+
+Two details are load-bearing:
+
+- The dev server is pinned to port 5173 with `--strictPort`. CORS is hardcoded to
+  `localhost:5173` in `backend/config/settings.py`, so letting Vite drift to 5174
+  makes every request fail and buries the real error.
+- `api-shapes.json` at the repo root is the contract between the two languages.
+  The fixtures in `frontend/e2e/fixtures/data.js` are built from it, and
+  `ApiShapeContractTests` in the backend suite asserts the real DRF responses
+  against it. Rename a serializer field and the backend suite fails, so a stub
+  cannot drift away from reality unnoticed.
+
+Run `npm run test:e2e:ui` for the Playwright inspector.
+
+## Notes
+
+- `schema.txt` is the entity diagram and is kept in sync with the Django models.
+- `templates.html` and exported mermaid diagrams are local mockups and are gitignored.

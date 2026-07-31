@@ -1,0 +1,100 @@
+erDiagram
+    accounts_user {
+        uuid id PK
+        email email UK
+        string name
+        string password_hash "PBKDF2, max 128"
+        boolean is_active
+        boolean is_staff
+        boolean is_superuser
+        datetime last_login "nullable"
+        datetime created_at
+    }
+
+    accounts_user ||--o{ auth_group : "member of"
+    accounts_user ||--o{ auth_permission : "holds"
+
+    groups_group {
+        uuid id PK
+        string name "max 255"
+        uuid created_by FK
+        datetime created_at
+    }
+
+    groups_membership {
+        uuid id PK
+        uuid user FK "indexed"
+        uuid group FK
+        datetime joined_at
+    }
+    "unique (user, group)"
+
+    groups_groupinvite {
+        uuid id PK
+        uuid group FK
+        uuid invited_by FK
+        email email "not normalized; compared case-sensitively"
+        string token UK "max 64, never expires"
+        datetime accepted_at "nullable"
+    }
+
+    bills_bill {
+        uuid id PK
+        uuid group FK
+        uuid created_by FK
+        uuid paid_by FK "nullable; must be a group member"
+        string title "max 255"
+        decimal total_amount "10,2 min 0.01"
+        string currency "max 10"
+        string bill_type "simple|compound, default compound"
+        datetime created_at
+    }
+
+    bills_item {
+        uuid id PK
+        uuid bill FK
+        string name "max 255"
+        decimal amount "10,2 min 0.01"
+        string split_mode "shares|percent, default shares"
+    }
+
+    bills_itemassignment {
+        uuid id PK
+        uuid item FK
+        uuid user FK "indexed"
+        decimal share_amount "10,2 min 0.01; derived, must sum to item amount"
+        decimal split_value "14,6 nullable; the raw shares or percent, restored on edit"
+    }
+    "unique (item, user)"
+
+    settlements_settlement {
+        uuid id PK
+        uuid group FK "indexed"
+        uuid payer FK
+        uuid payee FK
+        decimal amount "10,2 min 0.01"
+        datetime settled_at
+    }
+
+    accounts_user ||--o{ groups_group : "creates"
+    accounts_user ||--o{ groups_membership : "joins"
+    groups_group ||--o{ groups_membership : "has"
+    accounts_user ||--o{ groups_groupinvite : "sends"
+    groups_group ||--o{ groups_groupinvite : "has"
+    accounts_user ||--o{ bills_bill : "creates"
+    accounts_user ||--o{ bills_bill : "pays"
+    groups_group ||--o{ bills_bill : "has"
+    bills_bill ||--o{ bills_item : "contains"
+    bills_item ||--o{ bills_itemassignment : "splits into"
+    accounts_user ||--o{ bills_itemassignment : "owes"
+    groups_group ||--o{ settlements_settlement : "has"
+    accounts_user ||--o{ settlements_settlement : "pays"
+    accounts_user ||--o{ settlements_settlement : "receives"
+
+    notes {
+        "All primary keys are UUIDField(default=uuid.uuid4), so DEFAULT_AUTO_FIELD is inert."
+        "bills_itemassignment.share_amount is the stored money and is checked to equal the item amount exactly on write."
+        "bills_itemassignment.split_value preserves the editing intent (integer shares or a percent) so a re-save does not redistribute."
+        "Groups cascade to memberships, invites, bills (and their items/assignments) and settlements."
+        "User deletion cascades to memberships, assignments, bills created, and settlements paid."
+    }
