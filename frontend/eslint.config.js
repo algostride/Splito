@@ -24,6 +24,12 @@ export default defineConfig([
       },
     },
     rules: {
+      // NOTE: this pattern exempts every capitalized identifier, so an unused
+      // React component import is invisible to the linter (a dead `X` import
+      // survived this way). Fixing it properly means adding
+      // eslint-plugin-react and enabling `react/jsx-uses-vars`, because
+      // narrowing the pattern alone flags every JSX-referenced component as
+      // unused. Tracked as a follow-up.
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
       'react-hooks/set-state-in-effect': 'warn',
     },
